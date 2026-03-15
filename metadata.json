@@ -1,0 +1,8 @@
+{
+  "name": "Synthia: AI Interviewer",
+  "description": "An advanced AI interviewer, Synthia, conducts professional, insightful, and realistic mock interviews on any topic. After the interview, it provides a detailed performance analysis with a score and constructive feedback.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
