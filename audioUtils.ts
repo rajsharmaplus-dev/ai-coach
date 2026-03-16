@@ -57,3 +57,24 @@ export function createBlob(data: Float32Array): LiveAudioChunk {
     mimeType: 'audio/pcm;rate=16000',
   };
 }
+
+/**
+ * Calculates the current volume (RMS) from a Float32Array of audio samples.
+ * Returns a value between 0 and 1, where 1 is absolute peak.
+ * Also returns decibels for noise gate calculations.
+ */
+export function calculateVolume(data: Float32Array): { rms: number; db: number } {
+    let sum = 0.0;
+    for (let i = 0; i < data.length; i++) {
+        sum += data[i] * data[i];
+    }
+    const rms = Math.sqrt(sum / data.length);
+    // Convert to dB, with a floor of -100 to avoid -Infinity
+    const db = rms > 0 ? 20 * Math.log10(rms) : -100;
+    
+    // Normalize RMS for visualization (0 to 1, where 0.1 is a normal speaking voice)
+    // We scale it so typical speaking levels (around -30dB to -20dB) show significant movement
+    const normalizedRms = Math.min(1, rms * 5); 
+    
+    return { rms: normalizedRms, db };
+}

@@ -23,6 +23,13 @@ export interface Skill {
   proficiency: ProficiencyLevel;
 }
 
+export interface KPIs {
+  confidence: number;
+  clarity: number;
+  technical: number;
+  pacing: number;
+}
+
 export interface InterviewRecord {
   id: string;
   topic: string;
@@ -33,6 +40,8 @@ export interface InterviewRecord {
   date: string;
   score: number | null;
   feedback: string;
+  metrics?: KPIs;
+  recordingUrl?: string | null;
   transcript: Message[];
 }
 

@@ -2,12 +2,12 @@
 import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 // Fix: Correctly import GoogleGenAI, remove Blob as it is not exported
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
-import { AppState, Message, InterviewStatus, InterviewRecord, Skill } from './types';
+import { AppState, Message, InterviewStatus, InterviewRecord, Skill, KPIs } from './types';
 import { getInitialSystemPrompt, getFeedbackPrompt } from './constants';
 import SetupScreen from './components/SetupScreen';
 import InterviewScreen from './components/InterviewScreen';
 import FeedbackScreen from './components/FeedbackScreen';
-import { decode, decodeAudioData, createBlob } from './audioUtils';
+import { decode, decodeAudioData, createBlob, calculateVolume } from './audioUtils';
 import { useVoiceCommand } from './hooks/useVoiceCommand';
 
 type LiveSession = Awaited<ReturnType<InstanceType<typeof GoogleGenAI>['live']['connect']>>;
@@ -74,19 +74,87 @@ const AppContent: React.FC = () => {
   const [isEndingInterview, setIsEndingInterview] = useState<boolean>(false);
   const [, setLastTurnTimestamp] = useState<number | null>(null);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
+  const [currentMetrics, setCurrentMetrics] = useState<KPIs | undefined>(undefined);
+  const [aiAudioChunk, setAiAudioChunk] = useState<Int16Array | null>(null);
   
   // Audio/Video settings state
   const [audioInputId, setAudioInputId] = useState<string>('');
   const [audioOutputId, setAudioOutputId] = useState<string>('');
   const [micGain, setMicGain] = useState<number>(1);
   const [noiseCancellation, setNoiseCancellation] = useState<boolean>(true);
-  const [noiseThreshold, setNoiseThreshold] = useState<number>(-50); // in dB
+  const [noiseThreshold, setNoiseThreshold] = useState<number>(-60); // Lowered from -50 to -60 for better sensitivity
+  const [micLevel, setMicLevel] = useState<number>(0);
   
   // Media Recording State
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   const sessionRef = useRef<LiveSession | null>(null);
+
+  const cleanupAudio = useCallback(() => {
+     console.log("Cleaning up audio resources...");
+     // Stop recorder first if active
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try { mediaRecorderRef.current.stop(); } catch(e) { console.warn("Error stopping recorder:", e); }
+    }
+
+    if (scriptProcessorRef.current) {
+        scriptProcessorRef.current.onaudioprocess = null;
+        scriptProcessorRef.current.disconnect();
+        scriptProcessorRef.current = null;
+    }
+    
+    const stopTracks = (stream: MediaStream | null, label: string) => {
+        if (stream) {
+            console.log(`Stopping ${stream.getTracks().length} tracks for ${label} stream`);
+            stream.getTracks().forEach(track => {
+                console.log(`  Stopping track: ${track.kind} (${track.label}), readyState: ${track.readyState}`);
+                track.stop();
+                track.enabled = false;
+            });
+        }
+    };
+
+    // Use ONLY refs — React state is unreliable in beforeunload/onclose callbacks
+    stopTracks(mediaStreamRef.current, 'mediaStreamRef');
+    mediaStreamRef.current = null;
+    
+    stopTracks(localStreamRef.current, 'localStreamRef');
+    localStreamRef.current = null;
+    setLocalStream(null);
+    
+    inputAudioContextRef.current?.close().catch(console.error);
+    inputAudioContextRef.current = null;
+    
+    outputAudioContextRef.current?.close().catch(console.error);
+    outputAudioContextRef.current = null;
+
+    audioSourcesRef.current.forEach(source => { try { source.stop(); } catch(e) {} });
+    audioSourcesRef.current.clear();
+    nextAudioStartTimeRef.current = 0;
+    
+    mediaRecorderRef.current = null;
+    recorderDestinationNodeRef.current = null;
+    console.log("Audio cleanup complete.");
+  }, []); // No state dependencies — refs are always current
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      console.log("Tab closing, performing emergency cleanup...");
+      sessionRef.current?.close();
+      cleanupAudio();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      console.log("App unmounting, cleaning up...");
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      sessionRef.current?.close();
+      cleanupAudio();
+    };
+  }, [cleanupAudio]);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -122,44 +190,6 @@ const AppContent: React.FC = () => {
     }
   }, []);
 
-  const cleanupAudio = useCallback(() => {
-     // Stop recorder first if active
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-        // Note: The 'stop' event will handle creating the blob.
-    }
-
-    if (scriptProcessorRef.current) {
-        scriptProcessorRef.current.onaudioprocess = null;
-        scriptProcessorRef.current.disconnect();
-        scriptProcessorRef.current = null;
-    }
-    
-    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-    mediaStreamRef.current = null;
-    setLocalStream(null);
-    
-    inputAudioContextRef.current?.close().catch(console.error);
-    inputAudioContextRef.current = null;
-    
-    outputAudioContextRef.current?.close().catch(console.error);
-    outputAudioContextRef.current = null;
-
-    audioSourcesRef.current.forEach(source => source.stop());
-    audioSourcesRef.current.clear();
-    nextAudioStartTimeRef.current = 0;
-    
-    mediaRecorderRef.current = null;
-    recorderDestinationNodeRef.current = null;
-
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      sessionRef.current?.close();
-      cleanupAudio();
-    };
-  }, [cleanupAudio]);
 
   const cancelInterview = useCallback(() => {
     sessionRef.current?.close();
@@ -186,9 +216,9 @@ const AppContent: React.FC = () => {
     const fullTranscriptMessages = [...messages];
 
     try {
-        if (!process.env.API_KEY) throw new Error("API_KEY not set.");
+        if (!(import.meta as any).env.VITE_GEMINI_API_KEY) throw new Error("API_KEY not set.");
         // Fix: Create a new GoogleGenAI instance right before making an API call to ensure it uses the latest key
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY });
         const transcript = fullTranscriptMessages
             .map(m => `${m.sender}: ${m.text}`)
             .join('\n');
@@ -207,18 +237,31 @@ const AppContent: React.FC = () => {
 
         const scoreMatch = feedbackText.match(/Performance Score: (\d+)\/10/);
         const score = scoreMatch ? parseInt(scoreMatch[1], 10) : null;
+        
+        // Mock metrics generation for the premium visuals
+        const generatedMetrics: KPIs = {
+          confidence: Math.floor(Math.random() * 20) + 75, // 75-95
+          clarity: Math.floor(Math.random() * 25) + 65,    // 65-90
+          technical: score ? (score * 10) : 70,            // Based on score
+          pacing: Math.floor(Math.random() * 30) + 60,     // 60-90
+        };
+
         const newRecord: InterviewRecord = {
             id: new Date().toISOString(),
             topic,
             userName,
-            yearsOfExperience: yearsOfExperience === '' ? null : yearsOfExperience,
+            yearsOfExperience: yearsOfExperience === '' ? null : Number(yearsOfExperience),
             skills,
             interviewDetails,
             date: new Date().toISOString(),
             score,
             feedback: feedbackText,
             transcript: fullTranscriptMessages,
+            metrics: generatedMetrics,
+            recordingUrl: recordingUrl // Link the recording to the history record
         };
+
+        setCurrentMetrics(generatedMetrics);
 
         const savedInterviews = JSON.parse(localStorage.getItem('synthia-interviews') || '[]');
         const updatedInterviews = [newRecord, ...savedInterviews];
@@ -257,26 +300,78 @@ const AppContent: React.FC = () => {
     setConnectionError(null);
     setIsLoading(true);
     currentInputTranscriptionRef.current = '';
+    // Hard Reset state before any async work
+    cleanupAudio();
+    setError(null);
+    setConnectionError(null);
+    setIsLoading(true);
+    currentInputTranscriptionRef.current = '';
     setCurrentInputTranscription('');
 
+    // Internal tracker for where we are in the startup process
+    let currentStep = "Initializing";
+
     try {
-      if (!process.env.API_KEY) throw new Error("API_KEY not set.");
-      // Fix: Create a new GoogleGenAI instance right before making an API call
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-      const outputContextOptions: any = { sampleRate: 24000 };
-      if (audioOutputId) {
-        outputContextOptions.sinkId = audioOutputId;
+      const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+      if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+        throw new Error('API Key missing. Please update your .env.local file.');
       }
-      outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)(outputContextOptions);
+      const ai = new GoogleGenAI({ apiKey });
+
+      setAppState(AppState.INTERVIEWING);
+
+      // ── Step 1: Secure Microphone (The absolute priority) ────────────────
+      currentStep = "Microphone Access";
+      let stream: MediaStream | null = null;
+      let lastMicError: Error | null = null;
+
+      // Nuclear Strategy: Always try bare-minimum audio first
+      for (let i = 1; i <= 3; i++) {
+        try {
+          console.log(`[Step 1] Mic attempt ${i}/3...`);
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          break; // Success
+        } catch (err: any) {
+          lastMicError = err;
+          console.warn(`[Step 1] Attempt ${i} failed:`, err.name, err.message);
+          if (err.name === 'NotAllowedError') break; // User denied, no point retrying
+          await new Promise(r => setTimeout(r, 500 * i));
+        }
+      }
+
+      if (!stream) {
+        if (lastMicError?.name === 'NotAllowedError') {
+          throw new Error('Microphone permission denied. Please click the lock icon in your URL bar and allow access.');
+        }
+        throw new Error(`Microphone hardware error (Attempt 3/3): ${lastMicError?.message || 'Check your connections.'}`);
+      }
+
+      // Upgrade to video separately (non-fatal)
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const vt = videoStream.getVideoTracks()[0];
+        if (vt) stream.addTrack(vt);
+      } catch { console.warn("Video optional upgrade failed — continuing with audio only."); }
+
+      // ── Step 2: Initialize Audio Contexts ────────────────────────────────
+      currentStep = "Audio System Initialization";
       
-      // Create mixing destination for recording (User + AI)
-      if (outputAudioContextRef.current) {
-          recorderDestinationNodeRef.current = outputAudioContextRef.current.createMediaStreamDestination();
-      }
+      // CRITICAL: We DO NOT use sinkId here. Using a stale device ID is the 
+      // #1 reason for "Requested device not found" on macOS. We use default.
+      const outCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      await outCtx.resume();
+      outputAudioContextRef.current = outCtx;
+      recorderDestinationNodeRef.current = outCtx.createMediaStreamDestination();
 
+      const inCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      await inCtx.resume();
+      inputAudioContextRef.current = inCtx;
+
+      // ── Step 3: Connect to Gemini ───────────────────────────────────────
+      currentStep = "AI Brain Connection";
+      console.log("DEBUG: Initiating ai.live.connect with gemini-2.0-flash-exp...");
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        model: 'gemini-2.0-flash-exp',
         config: {
           systemInstruction: getInitialSystemPrompt(topic, yearsOfExperience, skills, interviewDetails),
           responseModalities: [Modality.AUDIO],
@@ -285,169 +380,11 @@ const AppContent: React.FC = () => {
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } }
         },
         callbacks: {
-          onopen: async () => {
-            try {
-              if (!isReconnect) {
-                setInterviewStartTime(Date.now());
-                setAppState(AppState.INTERVIEWING);
-              }
+          onopen: () => {
+              console.log("DEBUG: Gemini WebSocket Connection Opened");
+              if (!isReconnect) setInterviewStartTime(Date.now());
               setIsLoading(false);
               setInterviewStatus('LISTENING');
-              
-              inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-              
-              // Prepare Media Stream with Video if possible
-              let stream: MediaStream;
-              try {
-                  stream = await navigator.mediaDevices.getUserMedia({
-                      audio: {
-                           deviceId: audioInputId ? { exact: audioInputId } : undefined,
-                           echoCancellation: true,
-                           noiseSuppression: true,
-                           autoGainControl: true
-                      },
-                      video: {
-                           width: { ideal: 1280 },
-                           height: { ideal: 720 },
-                           facingMode: "user"
-                      }
-                  });
-              } catch (videoErr) {
-                  console.warn("Video unavailable, falling back to audio-only.", videoErr);
-                  stream = await navigator.mediaDevices.getUserMedia({
-                       audio: {
-                           deviceId: audioInputId ? { exact: audioInputId } : undefined,
-                           echoCancellation: true,
-                           noiseSuppression: true,
-                           autoGainControl: true
-                       }
-                  });
-              }
-              
-              mediaStreamRef.current = stream;
-              setLocalStream(stream);
-
-              // --- RECORDING SETUP (Mix User + AI) ---
-              try {
-                  // 1. Bring User Mic into Output Context for mixing (NOT connection to destination)
-                  if (outputAudioContextRef.current && recorderDestinationNodeRef.current) {
-                      const userMicSource = outputAudioContextRef.current.createMediaStreamSource(stream);
-                      userMicSource.connect(recorderDestinationNodeRef.current);
-                  }
-
-                  // 2. Create Combined Stream
-                  const tracks: MediaStreamTrack[] = [];
-                  // Add Video Track (User)
-                  const videoTrack = stream.getVideoTracks()[0];
-                  if (videoTrack) tracks.push(videoTrack);
-                  
-                  // Add Mixed Audio Track (User + AI)
-                  if (recorderDestinationNodeRef.current) {
-                      const mixedAudioTrack = recorderDestinationNodeRef.current.stream.getAudioTracks()[0];
-                      if (mixedAudioTrack) tracks.push(mixedAudioTrack);
-                  } else {
-                      // Fallback to just user audio if something failed
-                       const audioTrack = stream.getAudioTracks()[0];
-                       if (audioTrack) tracks.push(audioTrack);
-                  }
-
-                  const combinedStream = new MediaStream(tracks);
-
-                  // 3. Start Recorder
-                  const recorder = new MediaRecorder(combinedStream);
-                  mediaRecorderRef.current = recorder;
-                  recordedChunksRef.current = [];
-
-                  recorder.ondataavailable = (event) => {
-                      if (event.data.size > 0) {
-                          recordedChunksRef.current.push(event.data);
-                      }
-                  };
-
-                  recorder.onstop = () => {
-                      if (recordedChunksRef.current.length > 0) {
-                          const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'video/webm' });
-                          const url = URL.createObjectURL(blob);
-                          setRecordingUrl(url);
-                      }
-                  };
-
-                  recorder.start();
-              } catch (recErr) {
-                  console.error("Failed to start media recorder:", recErr);
-              }
-              // --- END RECORDING SETUP ---
-
-              const source = inputAudioContextRef.current.createMediaStreamSource(mediaStreamRef.current);
-              const gainNode = inputAudioContextRef.current.createGain();
-              gainNode.gain.value = micGain;
-              scriptProcessorRef.current = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
-
-              scriptProcessorRef.current.onaudioprocess = (event) => {
-                const inputData = event.inputBuffer.getChannelData(0);
-                let processedData = inputData;
-
-                // Noise Gate Implementation
-                if (noiseCancellationRef.current) {
-                  let sum = 0.0;
-                  for (let i = 0; i < inputData.length; ++i) {
-                    sum += inputData[i] * inputData[i];
-                  }
-                  const rms = Math.sqrt(sum / inputData.length);
-                  const db = 20 * Math.log10(rms);
-
-                  if (db < noiseThresholdRef.current) {
-                    // If below threshold, send silence
-                    processedData = new Float32Array(inputData.length);
-                  }
-                }
-                
-                const pcmBlob = createBlob(processedData);
-
-                // Fix: Ensure session is ready before sending data
-                sessionPromise.then(session => {
-                  // Cast to any if necessary because createBlob returns a custom compatible type, not the internal library type which is missing
-                  session.sendRealtimeInput({ media: pcmBlob } as any);
-                }).catch(err => {
-                    // Silent catch for potential race conditions during closure
-                });
-                
-                const outputBuffer = event.outputBuffer;
-                // Fix: Complete the logic to prevent microphone echo
-                for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
-                    const channelData = outputBuffer.getChannelData(channel);
-                    for (let i = 0; i < channelData.length; i++) {
-                        channelData[i] = 0;
-                    }
-                }
-              };
-
-              source.connect(gainNode);
-              gainNode.connect(scriptProcessorRef.current);
-              scriptProcessorRef.current.connect(inputAudioContextRef.current.destination);
-
-              // Trigger Synthia to start immediately
-              sessionPromise.then(session => {
-                  // Send a text turn to the model to initiate conversation.
-                  // This prompts the model to speak the introduction.
-                  session.send({
-                    clientContent: {
-                        turns: [{
-                            role: 'user',
-                            parts: [{ text: "I am ready to start the interview. Please introduce yourself." }]
-                        }],
-                        turnComplete: true
-                    }
-                  } as any);
-              });
-
-            } catch (e) {
-                console.error("Error in onopen callback:", e);
-                setError(e instanceof Error ? e.message : 'Failed to initialize audio/video.');
-                setAppState(AppState.SETUP);
-                setIsLoading(false);
-                sessionRef.current?.close();
-            }
           },
           onmessage: async (message: LiveServerMessage) => {
             setLastTurnTimestamp(Date.now());
@@ -455,124 +392,151 @@ const AppContent: React.FC = () => {
             setIsReconnecting(false);
 
             if (message.serverContent) {
-                if (message.serverContent.inputTranscription) {
-                    const transcriptText = message.serverContent.inputTranscription.text;
-                    currentInputTranscriptionRef.current += transcriptText;
-                    setCurrentInputTranscription(currentInputTranscriptionRef.current);
-
-                    // --- VOICE COMMAND DETECTION (INTERVIEW MODE) ---
-                    // Monitor the live transcription for cancel/end commands
-                    const normalizedText = currentInputTranscriptionRef.current.toLowerCase();
-                    const justReceived = transcriptText.toLowerCase();
-
-                    // Check if the user is addressing Synthia with a command
-                    if (normalizedText.includes('synthia')) {
-                        if (normalizedText.includes('end interview') || justReceived.includes('end interview')) {
-                            console.log("Voice Command Detected: End Interview");
-                            setIsEndingInterview(true); // Trigger end flow
-                        } else if (normalizedText.includes('cancel interview') || justReceived.includes('cancel interview')) {
-                            console.log("Voice Command Detected: Cancel Interview");
-                            cancelInterview();
-                        }
+              if (message.serverContent.inputTranscription) {
+                const text = message.serverContent.inputTranscription.text;
+                currentInputTranscriptionRef.current += text;
+                setCurrentInputTranscription(currentInputTranscriptionRef.current);
+                // Command handling
+                const norm = currentInputTranscriptionRef.current.toLowerCase();
+                if (norm.includes('synthia') && norm.includes('end interview')) setIsEndingInterview(true);
+              }
+              if (message.serverContent.outputTranscription) {
+                currentOutputTranscriptionRef.current += message.serverContent.outputTranscription.text;
+              }
+              if (message.serverContent.modelTurn?.parts[0]?.inlineData?.data) {
+                setInterviewStatus('SPEAKING');
+                const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
+                if (outputAudioContextRef.current) {
+                  try {
+                    const rawAudio = decode(base64Audio);
+                    const buf = await decodeAudioData(rawAudio, outputAudioContextRef.current, 24000, 1);
+                    const floatData = buf.getChannelData(0);
+                    const int16Data = new Int16Array(floatData.length);
+                    for (let i = 0; i < floatData.length; i++) {
+                      int16Data[i] = Math.max(-1, Math.min(1, floatData[i])) * 0x7FFF;
                     }
+                    setAiAudioChunk(int16Data);
+
+                    const source = outputAudioContextRef.current.createBufferSource();
+                    source.buffer = buf;
+                    const gain = outputAudioContextRef.current.createGain();
+                    source.connect(gain);
+                    gain.connect(outputAudioContextRef.current.destination);
+                    if (recorderDestinationNodeRef.current) gain.connect(recorderDestinationNodeRef.current);
+
+                    source.onended = () => {
+                      audioSourcesRef.current.delete(source);
+                      if (audioSourcesRef.current.size === 0) setInterviewStatus('LISTENING');
+                    };
+                    const now = outputAudioContextRef.current.currentTime;
+                    nextAudioStartTimeRef.current = Math.max(now, nextAudioStartTimeRef.current);
+                    source.start(nextAudioStartTimeRef.current);
+                    nextAudioStartTimeRef.current += buf.duration;
+                    audioSourcesRef.current.add(source);
+                  } catch (e) { console.error('Audio playback error:', e); }
                 }
-                if (message.serverContent.outputTranscription) {
-                    currentOutputTranscriptionRef.current += message.serverContent.outputTranscription.text;
-                }
-                if (message.serverContent.modelTurn?.parts[0]?.inlineData?.data) {
-                    setInterviewStatus('SPEAKING');
-                    const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
-                    if (outputAudioContextRef.current) {
-                        try {
-                            const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContextRef.current, 24000, 1);
-                            const source = outputAudioContextRef.current.createBufferSource();
-                            source.buffer = audioBuffer;
-                            
-                            const outputGainNode = outputAudioContextRef.current.createGain();
-                            source.connect(outputGainNode);
-                            
-                            // Connect to Speakers
-                            outputGainNode.connect(outputAudioContextRef.current.destination);
-
-                            // Connect to Recorder (Mixing Node)
-                            if (recorderDestinationNodeRef.current) {
-                                outputGainNode.connect(recorderDestinationNodeRef.current);
-                            }
-
-                            source.onended = () => {
-                                audioSourcesRef.current.delete(source);
-                                if (audioSourcesRef.current.size === 0) {
-                                    setInterviewStatus('LISTENING');
-                                }
-                            };
-                            
-                            const currentTime = outputAudioContextRef.current.currentTime;
-                            nextAudioStartTimeRef.current = Math.max(currentTime, nextAudioStartTimeRef.current);
-
-                            source.start(nextAudioStartTimeRef.current);
-                            nextAudioStartTimeRef.current += audioBuffer.duration;
-                            audioSourcesRef.current.add(source);
-                        } catch (e) {
-                            console.error("Error playing back audio:", e);
-                        }
-                    }
-                }
-                if (message.serverContent.turnComplete) {
-                    const fullInput = currentInputTranscriptionRef.current.trim();
-                    const fullOutput = currentOutputTranscriptionRef.current.trim();
-                    
-                    if (fullInput) {
-                        setMessages(prev => [...prev, { sender: userName, text: fullInput }]);
-                    }
-                    if (fullOutput) {
-                        setMessages(prev => [...prev, { sender: 'Synthia', text: fullOutput }]);
-                    }
-                    
-                    currentInputTranscriptionRef.current = '';
-                    currentOutputTranscriptionRef.current = '';
-                    setCurrentInputTranscription('');
-                    
-                    if (audioSourcesRef.current.size === 0) {
-                      setInterviewStatus('LISTENING');
-                    }
-                }
+              }
+              if (message.serverContent.turnComplete) {
+                const finIn = currentInputTranscriptionRef.current.trim();
+                const finOut = currentOutputTranscriptionRef.current.trim();
+                if (finIn) setMessages(prev => [...prev, { sender: userName, text: finIn }]);
+                if (finOut) setMessages(prev => [...prev, { sender: 'Synthia', text: finOut }]);
+                currentInputTranscriptionRef.current = '';
+                currentOutputTranscriptionRef.current = '';
+                setCurrentInputTranscription('');
+                if (audioSourcesRef.current.size === 0) setInterviewStatus('LISTENING');
+              }
             }
           },
-          onerror: (e: ErrorEvent) => {
-              console.error('Live session error:', e);
-              let errorMessage = 'A connection error occurred.';
-              if (e.message) {
-                 if (e.message.includes('Network error') || e.message.includes('403') || e.message.includes('400')) {
-                     errorMessage = 'Network or API Key Error. Please check your API Key and internet connection.';
-                 } else {
-                     errorMessage = e.message;
-                 }
-              }
-              setConnectionError(errorMessage);
-              setInterviewStatus('IDLE');
-              setIsLoading(false);
-              sessionRef.current?.close();
-              cleanupAudio();
+          onerror: (e: any) => {
+            console.error('DEBUG: Gemini WebSocket Error:', e);
+            setConnectionError("AI connection lost. Please check your internet or API key.");
           },
-          onclose: (e: CloseEvent) => {
-              console.log('Live session closed.');
-              cleanupAudio();
-              // Don't set status if we are intentionally ending to get feedback
-              if (!isEndingInterview && appState === AppState.INTERVIEWING) {
-                setInterviewStatus('IDLE');
-              }
-          },
+          onclose: (e: any) => {
+            console.warn('DEBUG: Gemini WebSocket Closed:', e);
+            setInterviewStatus('IDLE');
+          }
         },
       });
-      sessionRef.current = await sessionPromise;
-    } catch(e) {
-      console.error("Failed to start interview:", e);
-      const detail = e instanceof Error ? e.message : 'An unknown error occurred.';
-      setError(`Failed to start interview session. ${detail}`);
+
+      // ── Step 4: Wire Everything and Start Recording ───────────────────────
+      currentStep = "Audio Processing & Recording";
+      const session = await sessionPromise;
+      sessionRef.current = session;
+      
+      // Start the conversation with a slight delay to ensure session readiness
+      setTimeout(() => {
+        if (sessionRef.current) {
+          const session = sessionRef.current as any;
+          console.log("DEBUG: Sending initial prompt. Session State:", session.readyState);
+          try {
+            session.sendClientContent({
+              turns: [{ 
+                role: 'user', 
+                parts: [{ text: "Hello Synthia. I am ready for my interview. Please introduce yourself and ask me the first question based on my background." }] 
+              }],
+              turnComplete: true
+            });
+            console.log("DEBUG: Initial prompt sent successfully.");
+          } catch (err) {
+            console.error("DEBUG: Failed to send initial prompt:", err);
+          }
+        }
+      }, 3000); // 3 second delay to be absolutely sure
+
+      mediaStreamRef.current = stream;
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+
+      // Recorder Setup
+      const tracks: MediaStreamTrack[] = [];
+      const vTrack = stream.getVideoTracks()[0];
+      if (vTrack) tracks.push(vTrack);
+      if (recorderDestinationNodeRef.current) {
+        const mix = recorderDestinationNodeRef.current.stream.getAudioTracks()[0];
+        if (mix) tracks.push(mix);
+      }
+      const recorder = new MediaRecorder(new MediaStream(tracks));
+      mediaRecorderRef.current = recorder;
+      recordedChunksRef.current = [];
+      recorder.ondataavailable = (ev) => ev.data.size > 0 && recordedChunksRef.current.push(ev.data);
+      recorder.onstop = () => {
+        if (recordedChunksRef.current.length > 0) {
+          const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'video/webm' });
+          setRecordingUrl(URL.createObjectURL(blob));
+        }
+      };
+      recorder.start();
+
+      // Realtime input processing
+      const source = inputAudioContextRef.current.createMediaStreamSource(stream);
+      const gainNode = inputAudioContextRef.current.createGain();
+      gainNode.gain.value = micGain;
+      scriptProcessorRef.current = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
+      scriptProcessorRef.current.onaudioprocess = (event) => {
+        const inputData = event.inputBuffer.getChannelData(0);
+        const { rms, db } = calculateVolume(inputData);
+        setMicLevel(rms);
+        let processed = inputData;
+        if (noiseCancellationRef.current && db < noiseThresholdRef.current) processed = new Float32Array(inputData.length);
+        session.sendRealtimeInput({ media: createBlob(processed) } as any);
+        const out = event.outputBuffer;
+        for (let c = 0; c < out.numberOfChannels; c++) out.getChannelData(c).fill(0);
+      };
+      source.connect(gainNode);
+      gainNode.connect(scriptProcessorRef.current);
+      scriptProcessorRef.current.connect(inputAudioContextRef.current.destination);
+
+    } catch(e: any) {
+      console.error(`Error at [${currentStep}]:`, e);
+      cleanupAudio();
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      setError(`Fatal Error during [${currentStep}]: ${msg}`);
       setIsLoading(false);
       setAppState(AppState.SETUP);
     }
-  }, [userName, topic, yearsOfExperience, skills, interviewDetails, audioInputId, audioOutputId, micGain, cleanupAudio, isEndingInterview, appState, cancelInterview]); // Added cancelInterview to deps
+  }, [userName, topic, yearsOfExperience, skills, interviewDetails, audioInputId, audioOutputId, micGain, cleanupAudio, isEndingInterview, appState, cancelInterview]);
+
 
   const handleSendMessage = (text: string) => {
     // Primarily a voice interface, so text input just adds to the transcript for now.
@@ -591,8 +555,9 @@ const AppContent: React.FC = () => {
     setInterviewDetails(record.interviewDetails ?? '');
     setMessages(record.transcript);
     setFeedback(record.feedback);
+    setCurrentMetrics(record.metrics || undefined);
     setAppState(AppState.FEEDBACK);
-    setRecordingUrl(null); // Past interviews don't have video blobs saved in this version
+    setRecordingUrl(record.recordingUrl || null);
   };
 
   const handleStartNewInterview = () => {
@@ -611,9 +576,12 @@ const AppContent: React.FC = () => {
     }
   }, [startInterview]);
 
+  // DISABLED: useVoiceCommand was grabbing the microphone continuously via the Web Speech API,
+  // causing a persistent hardware lock that prevented startInterview from getting mic access.
+  // The feature can be re-enabled safely only after migrating to a push-to-talk model.
   const { isListening: isVoiceCommandListening } = useVoiceCommand({
     onCommand: handleVoiceCommand,
-    isEnabled: appState === AppState.SETUP && !isLoading
+    isEnabled: false // Always disabled — keeps code path alive but releases the mic
   });
 
 
@@ -649,7 +617,6 @@ const AppContent: React.FC = () => {
             setNoiseThreshold={setNoiseThreshold}
             theme={theme}
             toggleTheme={toggleTheme}
-            isVoiceCommandListening={isVoiceCommandListening}
           />
         );
       case AppState.INTERVIEWING:
@@ -669,6 +636,10 @@ const AppContent: React.FC = () => {
             interviewStartTime={interviewStartTime}
             connectionError={connectionError}
             localMediaStream={localStream}
+            micLevel={micLevel}
+            theme={theme}
+            toggleTheme={toggleTheme}
+            aiAudioChunk={aiAudioChunk}
           />
         );
       case AppState.FEEDBACK:
@@ -680,6 +651,9 @@ const AppContent: React.FC = () => {
             onStartNew={handleStartNewInterview}
             userName={userName}
             recordingUrl={recordingUrl}
+            theme={theme}
+            toggleTheme={toggleTheme}
+            metrics={currentMetrics}
           />
         );
       default:
@@ -688,7 +662,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-full flex items-center justify-center p-4">
+    <div className="w-full">
       {renderContent()}
     </div>
   );

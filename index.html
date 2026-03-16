@@ -3,51 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Synthia: AI Interviewer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "jspdf": "https://esm.sh/jspdf@2.5.1"
-  }
-}
-</script>
-<script>
-  // Setup Tailwind to use class-based dark mode
-  tailwind.config = {
-    darkMode: 'class',
-  }
-</script>
-<style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Synthia: AI Interview Coach</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Design System -->
+    <link rel="stylesheet" href="/index.css">
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react/": "https://aistudiocdn.com/react@^19.2.0/",
+        "react": "https://aistudiocdn.com/react@^19.2.0",
+        "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+        "jspdf": "https://esm.sh/jspdf@2.5.1"
+      }
+    }
+    </script>
+    <style>
+      /* Prevent initial content flash and set base theme */
+      body {
+        background-color: #0c0c0e;
+        color: #f2f2f3;
+        margin: 0;
+      }
+
+      /* Base animations carried over and refined */
       @keyframes speaking-glow {
-        0%, 100% { box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.3); }
-        50% { box-shadow: 0 0 35px 15px rgba(168, 85, 247, 0.5); }
-      }
-      @keyframes speaking-mouth {
-        0%, 100% { transform: scaleY(0.2); opacity: 0.7; }
-        50% { transform: scaleY(1); opacity: 1; }
-      }
-      @keyframes speaking-pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.03); }
+        0%, 100% { box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.2); }
+        50% { box-shadow: 0 0 35px 15px rgba(168, 85, 247, 0.4); }
       }
       .animate-speaking-glow {
-        animation: speaking-glow 1.5s ease-in-out infinite;
-      }
-      .animate-speaking-mouth {
-        animation: speaking-mouth 0.4s ease-in-out infinite;
-      }
-      .animate-speaking-pulse {
-        animation: speaking-pulse 1.5s ease-in-out infinite;
+        animation: speaking-glow 2s ease-in-out infinite;
       }
     </style>
-<link rel="stylesheet" href="/index.css">
-</head>
+  </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>

@@ -58,13 +58,19 @@ export const useVoiceCommand = ({ onCommand, isEnabled }: UseVoiceCommandProps) 
                 // Ignore "already started" errors
             }
         } else {
-            // If disabled, stop.
-            recognitionRef.current.stop();
+            // Use abort() for immediate hardware release
+            recognitionRef.current.abort();
         }
     }
   }, [isEnabled, permissionDenied]);
 
   useEffect(() => {
+    const handleBeforeUnload = () => {
+        shouldBeRunningRef.current = false;
+        recognitionRef.current?.abort();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     // Check for browser support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -129,8 +135,9 @@ export const useVoiceCommand = ({ onCommand, isEnabled }: UseVoiceCommandProps) 
     }
 
     return () => {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
         shouldBeRunningRef.current = false;
-        recognition.stop();
+        recognition.abort();
         recognitionRef.current = null;
     };
   }, []); // Setup once on mount
