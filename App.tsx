@@ -398,7 +398,7 @@ const AppContent: React.FC = () => {
                   sessionRef.current?.sendClientContent({
                     turns: [{ 
                       role: 'user', 
-                      parts: [{ text: "Hello Synthia. I am ready for my interview. Please introduce yourself and ask me the first question based on my background." }] 
+                      parts: [{ text: "Hello Sanai. I am ready for my interview. Please introduce yourself and ask me the first question based on my background." }] 
                     }],
                     turnComplete: true
                   });
@@ -419,7 +419,7 @@ const AppContent: React.FC = () => {
                 setCurrentInputTranscription(currentInputTranscriptionRef.current);
                 // Command handling
                 const norm = currentInputTranscriptionRef.current.toLowerCase();
-                if (norm.includes('synthia') && norm.includes('end interview')) setIsEndingInterview(true);
+                if (norm.includes('sanai') && norm.includes('end interview')) setIsEndingInterview(true);
               }
               if (message.serverContent.outputTranscription) {
                 currentOutputTranscriptionRef.current += message.serverContent.outputTranscription.text;
@@ -469,7 +469,7 @@ const AppContent: React.FC = () => {
                 const finIn = currentInputTranscriptionRef.current.trim();
                 const finOut = currentOutputTranscriptionRef.current.trim();
                 if (finIn) setMessages(prev => [...prev, { sender: userName, text: finIn }]);
-                if (finOut) setMessages(prev => [...prev, { sender: 'Synthia', text: finOut }]);
+                if (finOut) setMessages(prev => [...prev, { sender: 'Sanai', text: finOut }]);
                 currentInputTranscriptionRef.current = '';
                 currentOutputTranscriptionRef.current = '';
                 setCurrentInputTranscription('');

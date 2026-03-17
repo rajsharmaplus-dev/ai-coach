@@ -85,7 +85,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             <BrainCircuitIcon size={22} />
           </div>
           <div>
-            <div className="app-brand-name">Synthia</div>
+            <div className="app-brand-name">Sanai</div>
             <div className="app-brand-subtitle">AI Interview Coach</div>
           </div>
         </div>
@@ -100,7 +100,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         <section className="s-form-panel glass-rich animate-fade-slide">
           <div className="s-panel-header">
             <h2 className="s-panel-title">Start Your Session</h2>
-            <p className="s-panel-subtitle">Configure your interview and let Synthia tailor a precision coaching experience.</p>
+            <p className="s-panel-subtitle">Configure your interview and let Sanai tailor a precision coaching experience.</p>
           </div>
 
           <div className="s-form-grid">

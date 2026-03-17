@@ -27,7 +27,7 @@ interface InterviewScreenProps {
 const STATUS_CONFIG: Record<InterviewStatus, { label: string; cls: string }> = {
   IDLE:      { label: 'Idle',             cls: 'i-status--idle' },
   LISTENING: { label: 'Listening',        cls: 'i-status--listening' },
-  SPEAKING:  { label: 'Synthia Speaking', cls: 'i-status--speaking' },
+  SPEAKING:  { label: 'Sanai Speaking', cls: 'i-status--speaking' },
   THINKING:  { label: 'Thinking',         cls: 'i-status--thinking' },
 };
 
@@ -80,7 +80,7 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
             <BrainCircuitIcon size={20} />
           </div>
           <div>
-            <div className="app-brand-name">Synthia</div>
+            <div className="app-brand-name">Sanai</div>
             <div className="app-brand-subtitle">Live Session</div>
           </div>
         </div>
@@ -137,7 +137,7 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
               </div>
             </div>
           </div>
-          <p className="i-avatar-name">Synthia <span className="text-tertiary">· AI Interviewer</span></p>
+          <p className="i-avatar-name">Sanai <span className="text-tertiary">· AI Interviewer</span></p>
         </div>
 
         {/* Transcript */}
@@ -146,13 +146,13 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
             {messages.length === 0 && !currentInputTranscription && (
               <div className="i-empty-state">
                 <div className="i-empty-icon pulse-primary"><BrainCircuitIcon size={28} /></div>
-                <p>Synthia will introduce herself shortly.</p>
+                <p>Sanai will introduce herself shortly.</p>
                 <p className="text-tertiary text-sm">Speak clearly and confidently.</p>
               </div>
             )}
 
             {messages.map((msg, i) => (
-              <div key={i} className={`i-msg ${msg.sender === 'Synthia' ? 'i-msg--ai' : 'i-msg--user'}`}>
+              <div key={i} className={`i-msg ${msg.sender === 'Sanai' ? 'i-msg--ai' : 'i-msg--user'}`}>
                 <span className="i-msg-sender">{msg.sender}</span>
                 <div className="i-msg-bubble">{msg.text}</div>
               </div>
@@ -201,7 +201,7 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
               type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder={interviewStatus === 'SPEAKING' ? 'Synthia is speaking...' : 'Type a message or speak...'}
+              placeholder={interviewStatus === 'SPEAKING' ? 'Sanai is speaking...' : 'Type a message or speak...'}
               disabled={isEnding}
             />
             <button type="submit" className="i-send-btn" disabled={!input.trim() || isEnding}>
