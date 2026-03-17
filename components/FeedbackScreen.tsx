@@ -47,7 +47,7 @@ const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     const doc = new jsPDF();
     doc.setFontSize(22);
     doc.setTextColor(110, 60, 255);
-    doc.text(`Synthia Performance Report`, 20, 20);
+    doc.text(`Sanai Performance Report`, 20, 20);
     doc.setFontSize(12);
     doc.setTextColor(50, 50, 50);
     doc.text(`Session: ${topic}`, 20, 34);
@@ -57,7 +57,7 @@ const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     doc.text('AI Analysis:', 20, 64);
     const lines = doc.splitTextToSize(feedback, 170);
     doc.text(lines, 20, 72);
-    doc.save(`Synthia_${topic.replace(/\s+/g, '_')}_${userName}.pdf`);
+    doc.save(`Sanai_${topic.replace(/\s+/g, '_')}_${userName}.pdf`);
   };
 
   // Parse structured feedback from Gemini response separated by ---
@@ -167,7 +167,7 @@ const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             <div className="f-transcript-list custom-scrollbar">
               {messages.length > 0 ? (
                 messages.map((msg, i) => (
-                  <div key={i} className={`f-msg ${msg.sender === 'Synthia' ? 'f-msg--ai' : 'f-msg--user'}`}>
+                  <div key={i} className={`f-msg ${msg.sender === 'Sanai' ? 'f-msg--ai' : 'f-msg--user'}`}>
                     <span className="f-msg-sender">{msg.sender}</span>
                     <p className="f-msg-text">{msg.text}</p>
                   </div>

@@ -87,7 +87,7 @@ export const useVoiceCommand = ({ onCommand, isEnabled }: UseVoiceCommandProps) 
       const transcript = event.results[lastResultIndex][0].transcript.trim().toLowerCase();
       console.log('Voice Command Heard:', transcript);
 
-      if (transcript.includes('synthia')) {
+      if (transcript.includes('sanai')) {
         if (transcript.includes('start interview') || transcript.includes('start the interview')) {
           onCommand('start');
         }
