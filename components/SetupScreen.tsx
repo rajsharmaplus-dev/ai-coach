@@ -413,14 +413,15 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         /* ── Form Grid ── */
         .s-form-grid {
           display: grid;
-          grid-template-columns: 2fr 2fr 1fr;
-          gap: var(--sp-3);
+          grid-template-columns: 1.2fr 1.2fr 1fr;
+          gap: var(--sp-4);
         }
         @media (max-width: 600px) {
           .s-form-grid { grid-template-columns: 1fr; }
         }
 
         .s-field { display: flex; flex-direction: column; gap: var(--sp-2); }
+        .s-field .label { min-height: 1.2rem; display: flex; align-items: center; }
         .s-field--full { grid-column: 1 / -1; }
         .s-field--checkbox { grid-column: 1 / -1; }
 
