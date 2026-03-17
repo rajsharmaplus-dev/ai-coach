@@ -46,10 +46,10 @@
    ========================================================= */
 :root {
   /* --- Background Layers --- */
-  --bg-base:      hsl(240, 15%, 3%);        /* Page canvas   */
-  --bg-surface:   hsl(240, 12%, 8%);        /* Cards, panels */
-  --bg-elevated:  hsl(240, 12%, 11%);       /* Hover states  */
-  --bg-overlay:   rgba(10, 10, 20, 0.80);   /* Modals, menus */
+  --bg-base:      hsl(222, 24%, 4%);        /* Deepest Onyx Navy */
+  --bg-surface:   hsl(222, 24%, 8%);        /* Panels */
+  --bg-elevated:  hsl(222, 24%, 12%);       /* Hover/Active */
+  --bg-overlay:   rgba(8, 10, 20, 0.85);
 
   /* --- Primary Accent (Amethyst) --- */
   --purple-100: hsla(270, 100%, 65%, 0.08);
@@ -214,8 +214,9 @@ body {
 
   /* Ambient gradient — adds depth without competing with content */
   background-image:
-    radial-gradient(ellipse 80% 50% at 0% 0%, hsla(270, 100%, 65%, 0.06) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 100% 100%, hsla(190, 100%, 52%, 0.04) 0%, transparent 60%);
+    radial-gradient(circle at 0% 0%, hsla(222, 100%, 60%, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 100% 0%, hsla(270, 100%, 65%, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, hsla(190, 100%, 52%, 0.03) 0%, transparent 50%);
   background-attachment: fixed;
 }
 
