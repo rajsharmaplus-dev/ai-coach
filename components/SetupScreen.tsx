@@ -168,6 +168,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             {/* Context */}
             <div className="s-field s-field--full">
               <label className="label" htmlFor="context">Interview Context <span className="text-tertiary" style={{ fontWeight: 400 }}>(Optional)</span></label>
+              <textarea
                 id="context"
                 value={interviewDetails}
                 onChange={e => setInterviewDetails(e.target.value)}
