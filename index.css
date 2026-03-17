@@ -610,10 +610,10 @@ input[type="range"]:hover::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, var(--purple-500), var(--purple-600));
+  background: linear-gradient(145deg, var(--cyan-500), #0891b2);
   border-radius: var(--radius-md);
   color: white;
-  box-shadow: 0 6px 20px -4px var(--purple-glow);
+  box-shadow: 0 6px 20px -4px var(--cyan-glow);
   flex-shrink: 0;
 }
 
@@ -623,10 +623,11 @@ input[type="range"]:hover::-webkit-slider-thumb {
   font-weight: 900;
   letter-spacing: -0.04em;
   line-height: 1;
-  background: linear-gradient(to right, var(--text-primary) 50%, var(--purple-500));
+  background: linear-gradient(135deg, #fff 30%, var(--cyan-500));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.4));
 }
 
 .app-brand-subtitle {
