@@ -369,29 +369,50 @@ const AppContent: React.FC = () => {
 
       // ── Step 3: Connect to Gemini ───────────────────────────────────────
       currentStep = "AI Brain Connection";
-      console.log("DEBUG: Initiating ai.live.connect with gemini-2.0-flash-exp...");
+      console.log("DEBUG: Initiating ai.live.connect with gemini-2.5-flash-native-audio-latest...");
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash-native-audio-latest',
         config: {
-          systemInstruction: getInitialSystemPrompt(topic, yearsOfExperience, skills, interviewDetails),
+          systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, interviewDetails) }] },
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } }
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         },
         callbacks: {
           onopen: () => {
               console.log("DEBUG: Gemini WebSocket Connection Opened");
-              if (!isReconnect) setInterviewStartTime(Date.now());
-              setIsLoading(false);
-              setInterviewStatus('LISTENING');
           },
           onmessage: async (message: LiveServerMessage) => {
+            console.log("DEBUG: Received message from Gemini:", message);
             setLastTurnTimestamp(Date.now());
             setConnectionError(null);
             setIsReconnecting(false);
 
+            if (message.setupComplete) {
+              console.log("DEBUG: setupComplete received. Session is ready.");
+              if (!isReconnect) {
+                setInterviewStartTime(Date.now());
+                try {
+                  console.log("DEBUG: Sending initial prompt after setupComplete...");
+                  sessionRef.current?.sendClientContent({
+                    turns: [{ 
+                      role: 'user', 
+                      parts: [{ text: "Hello Synthia. I am ready for my interview. Please introduce yourself and ask me the first question based on my background." }] 
+                    }],
+                    turnComplete: true
+                  });
+                } catch (err) {
+                  console.error("DEBUG: Failed to send initial prompt:", err);
+                }
+              }
+              setIsLoading(false);
+              setInterviewStatus('LISTENING');
+              return;
+            }
+
             if (message.serverContent) {
+              console.log("DEBUG: serverContent received:", message.serverContent);
               if (message.serverContent.inputTranscription) {
                 const text = message.serverContent.inputTranscription.text;
                 currentInputTranscriptionRef.current += text;
@@ -404,12 +425,14 @@ const AppContent: React.FC = () => {
                 currentOutputTranscriptionRef.current += message.serverContent.outputTranscription.text;
               }
               if (message.serverContent.modelTurn?.parts[0]?.inlineData?.data) {
+                console.log("DEBUG: Audio data received, length:", message.serverContent.modelTurn.parts[0].inlineData.data.length);
                 setInterviewStatus('SPEAKING');
                 const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
                 if (outputAudioContextRef.current) {
                   try {
                     const rawAudio = decode(base64Audio);
                     const buf = await decodeAudioData(rawAudio, outputAudioContextRef.current, 24000, 1);
+                    console.log("DEBUG: AudioBuffer created, duration:", buf.duration);
                     const floatData = buf.getChannelData(0);
                     const int16Data = new Int16Array(floatData.length);
                     for (let i = 0; i < floatData.length; i++) {
@@ -425,15 +448,21 @@ const AppContent: React.FC = () => {
                     if (recorderDestinationNodeRef.current) gain.connect(recorderDestinationNodeRef.current);
 
                     source.onended = () => {
+                      console.log("DEBUG: Audio chunk finished playing");
                       audioSourcesRef.current.delete(source);
                       if (audioSourcesRef.current.size === 0) setInterviewStatus('LISTENING');
                     };
                     const now = outputAudioContextRef.current.currentTime;
+                    console.log("DEBUG: Scheduling audio at:", Math.max(now, nextAudioStartTimeRef.current));
                     nextAudioStartTimeRef.current = Math.max(now, nextAudioStartTimeRef.current);
                     source.start(nextAudioStartTimeRef.current);
                     nextAudioStartTimeRef.current += buf.duration;
                     audioSourcesRef.current.add(source);
-                  } catch (e) { console.error('Audio playback error:', e); }
+                  } catch (e) { 
+                    console.error('DEBUG: Audio playback error:', e); 
+                  }
+                } else {
+                  console.warn("DEBUG: outputAudioContextRef.current is missing!");
                 }
               }
               if (message.serverContent.turnComplete) {
@@ -453,7 +482,12 @@ const AppContent: React.FC = () => {
             setConnectionError("AI connection lost. Please check your internet or API key.");
           },
           onclose: (e: any) => {
-            console.warn('DEBUG: Gemini WebSocket Closed:', e);
+            const reason = e.reason || "No reason provided";
+            console.log(`DEBUG: Gemini WebSocket Closed. Code: ${e.code}, Reason: ${reason}`);
+            
+            if (e.code === 1008 || e.code === 1000) {
+               setError(`Connection closed by Gemini. Reason: ${reason}`);
+            }
             setInterviewStatus('IDLE');
           }
         },
@@ -465,24 +499,7 @@ const AppContent: React.FC = () => {
       sessionRef.current = session;
       
       // Start the conversation with a slight delay to ensure session readiness
-      setTimeout(() => {
-        if (sessionRef.current) {
-          const session = sessionRef.current as any;
-          console.log("DEBUG: Sending initial prompt. Session State:", session.readyState);
-          try {
-            session.sendClientContent({
-              turns: [{ 
-                role: 'user', 
-                parts: [{ text: "Hello Synthia. I am ready for my interview. Please introduce yourself and ask me the first question based on my background." }] 
-              }],
-              turnComplete: true
-            });
-            console.log("DEBUG: Initial prompt sent successfully.");
-          } catch (err) {
-            console.error("DEBUG: Failed to send initial prompt:", err);
-          }
-        }
-      }, 3000); // 3 second delay to be absolutely sure
+      // Note: Initial prompt is now handled in the onopen callback above
 
       mediaStreamRef.current = stream;
       localStreamRef.current = stream;
@@ -508,10 +525,21 @@ const AppContent: React.FC = () => {
       };
       recorder.start();
 
-      // Realtime input processing
+      // Realtime input processing (to Gemini - inCtx)
       const source = inputAudioContextRef.current.createMediaStreamSource(stream);
       const gainNode = inputAudioContextRef.current.createGain();
       gainNode.gain.value = micGain;
+
+      // MIX USER VOICE INTO RECORDING (using outCtx to avoid cross-context error)
+      if (outputAudioContextRef.current && recorderDestinationNodeRef.current) {
+        console.log("DEBUG: Connecting User Mic to Recorder Destination via outCtx...");
+        const recordingMicSource = outputAudioContextRef.current.createMediaStreamSource(stream);
+        const recordingMicGain = outputAudioContextRef.current.createGain();
+        recordingMicGain.gain.value = micGain;
+        recordingMicSource.connect(recordingMicGain);
+        recordingMicGain.connect(recorderDestinationNodeRef.current);
+      }
+
       scriptProcessorRef.current = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
       scriptProcessorRef.current.onaudioprocess = (event) => {
         const inputData = event.inputBuffer.getChannelData(0);
@@ -519,7 +547,12 @@ const AppContent: React.FC = () => {
         setMicLevel(rms);
         let processed = inputData;
         if (noiseCancellationRef.current && db < noiseThresholdRef.current) processed = new Float32Array(inputData.length);
-        session.sendRealtimeInput({ media: createBlob(processed) } as any);
+        
+        // Only send to Gemini if the WebSocket is actually OPEN
+        if (sessionRef.current && (sessionRef.current as any).readyState === 1) {
+          session.sendRealtimeInput({ media: createBlob(processed) } as any);
+        }
+
         const out = event.outputBuffer;
         for (let c = 0; c < out.numberOfChannels; c++) out.getChannelData(c).fill(0);
       };

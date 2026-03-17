@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { Message, InterviewStatus } from '../types';
 import { MicrophoneIcon, ClockIcon, SendIcon, BrainCircuitIcon, SunIcon, MoonIcon } from './icons';
-import Avatar3D from './Avatar3D';
+// Removed Avatar3D as per priority shift toward audio and recording stability
 
 interface InterviewScreenProps {
   messages: Message[];
@@ -122,10 +122,20 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
 
       {/* ── Main Stage ── */}
       <main className="i-main">
-        {/* Avatar Stage */}
+        {/* AI Presence Stage */}
         <div className="i-avatar-col">
           <div className="i-avatar-stage">
-            <Avatar3D status={interviewStatus} audioStream={aiAudioChunk || undefined} />
+            <div className={`i-ai-presence ${interviewStatus}`}>
+              <div className="i-ai-glow" />
+              <div className="i-ai-core">
+                <BrainCircuitIcon size={64} />
+              </div>
+              <div className="i-ai-rings">
+                <div className="i-ai-ring" />
+                <div className="i-ai-ring" />
+                <div className="i-ai-ring" />
+              </div>
+            </div>
           </div>
           <p className="i-avatar-name">Synthia <span className="text-tertiary">· AI Interviewer</span></p>
         </div>
@@ -353,6 +363,88 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           overflow: hidden;
           border: 1px solid var(--border-subtle);
           box-shadow: var(--shadow-lg), 0 0 60px rgba(139,92,246,0.1);
+          background: var(--bg-deep);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+        }
+
+        /* ── AI Presence Visualization ── */
+        .i-ai-presence {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 200px;
+          height: 200px;
+        }
+
+        .i-ai-core {
+          position: relative;
+          z-index: 5;
+          color: var(--purple-500);
+          filter: drop-shadow(0 0 15px var(--purple-glow));
+          animation: core-float 4s ease-in-out infinite;
+        }
+
+        .SPEAKING .i-ai-core {
+          color: var(--cyan-500);
+          filter: drop-shadow(0 0 20px var(--cyan-glow));
+          transform: scale(1.1);
+        }
+
+        .i-ai-glow {
+          position: absolute;
+          inset: -20px;
+          background: radial-gradient(circle, var(--purple-500) 0%, transparent 70%);
+          opacity: 0.15;
+          filter: blur(40px);
+          animation: glow-pulse 3s ease-in-out infinite;
+        }
+
+        .SPEAKING .i-ai-glow {
+          background: radial-gradient(circle, var(--cyan-500) 0%, transparent 70%);
+          opacity: 0.25;
+        }
+
+        .i-ai-rings {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .i-ai-ring {
+          position: absolute;
+          border: 1px solid var(--purple-300);
+          border-radius: 50%;
+          opacity: 0.3;
+        }
+
+        .i-ai-ring:nth-child(1) { width: 100%; height: 100%; animation: ring-rotate 10s linear infinite; }
+        .i-ai-ring:nth-child(2) { width: 140%; height: 140%; animation: ring-rotate 15s linear reverse infinite; opacity: 0.15; }
+        .i-ai-ring:nth-child(3) { width: 70%; height: 70%; animation: ring-rotate 7s linear infinite; }
+
+        .SPEAKING .i-ai-ring {
+          border-color: var(--cyan-400);
+          opacity: 0.5;
+        }
+
+        @keyframes core-float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+
+        @keyframes glow-pulse {
+          0%, 100% { opacity: 0.15; transform: scale(1); }
+          50% { opacity: 0.25; transform: scale(1.1); }
+        }
+
+        @keyframes ring-rotate {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
 
         .i-avatar-name {
