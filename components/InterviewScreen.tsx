@@ -229,9 +229,11 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           justify-content: space-between;
           padding: var(--sp-3) var(--sp-5);
           border-bottom: 1px solid var(--border-subtle);
-          background: rgba(10,10,20,0.85);
+          background: var(--header-bg);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          box-shadow: 0 1px 0 0 var(--header-accent), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
           flex-shrink: 0;
           gap: var(--sp-4);
           z-index: 10;

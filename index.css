@@ -61,6 +61,8 @@
   /* --- Secondary Accent (Cyan) --- */
   --cyan-500: hsl(190, 100%, 52%);
   --cyan-glow: hsla(190, 100%, 52%, 0.25);
+  --header-bg: hsla(222, 47%, 7%, 0.85); /* Midnight Navy */
+  --header-accent: var(--cyan-500);
 
   /* --- Semantic Status --- */
   --green-500: hsl(145, 63%, 49%);

@@ -316,9 +316,11 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
           position: sticky;
           top: 0;
           z-index: 10;
-          background: rgba(10,10,20,0.75);
+          background: var(--header-bg);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          box-shadow: 0 1px 0 0 var(--header-accent), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
         }
 
         /* ── Body ── */
