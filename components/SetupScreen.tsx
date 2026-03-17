@@ -104,8 +104,8 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
           </div>
 
           <div className="s-form-grid">
-            {/* Name */}
-            <div className="s-field s-field--full">
+            {/* Top Row: Name, Role, Exp */}
+            <div className="s-field">
               <label className="label" htmlFor="userName">Your Name</label>
               <input
                 id="userName"
@@ -168,12 +168,11 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             {/* Context */}
             <div className="s-field s-field--full">
               <label className="label" htmlFor="context">Interview Context <span className="text-tertiary" style={{ fontWeight: 400 }}>(Optional)</span></label>
-              <textarea
                 id="context"
                 value={interviewDetails}
                 onChange={e => setInterviewDetails(e.target.value)}
                 placeholder="Paste the job description, company background, or specific round details..."
-                rows={3}
+                rows={2}
               />
             </div>
           </div>
@@ -311,7 +310,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: var(--sp-4) var(--sp-6);
+          padding: var(--sp-2) var(--sp-6);
           border-bottom: 1px solid var(--border-subtle);
           position: sticky;
           top: 0;
@@ -327,7 +326,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         .s-body {
           max-width: 1120px;
           width: 100%;
-          margin: var(--sp-10) auto 0;
+          margin: var(--sp-4) auto 0;
           padding: 0 var(--sp-6);
           display: grid;
           grid-template-columns: 1fr 320px;
@@ -346,10 +345,10 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
 
         /* ── Form Panel ── */
         .s-form-panel {
-          padding: var(--sp-8);
+          padding: var(--sp-5) var(--sp-6);
           display: flex;
           flex-direction: column;
-          gap: var(--sp-8);
+          gap: var(--sp-4);
         }
 
         @media (max-width: 600px) {
@@ -368,8 +367,8 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         /* ── Form Grid ── */
         .s-form-grid {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: var(--sp-5);
+          grid-template-columns: 2fr 2fr 1fr;
+          gap: var(--sp-3);
         }
         @media (max-width: 600px) {
           .s-form-grid { grid-template-columns: 1fr; }
