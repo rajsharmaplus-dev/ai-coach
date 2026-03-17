@@ -22,7 +22,7 @@ const Avatar3D: React.FC<Avatar3DProps> = ({ status, audioStream, isMuted = fals
     // We'll use a premium Ready Player Me model with specific parameters for TalkingHead
     // ARKit and Oculus Visemes are required for high-fidelity lip-sync
     // We'll use a verified, high-quality Ready Player Me model
-    const avatarModelUrl = "https://models.readyplayer.me/664777277ad2faec5b6079f0.glb?morphTargetsGroup=ARKit,Oculus+Visemes&textureFormat=png";
+    const avatarModelUrl = "https://models.readyplayer.me/664777277ad2faec5b6079f0.glb?morphTargetsGroup=ARKit,Oculus+Visemes&textureFormat=png&textureSizeLimit=1024&meshCompression=false";
 
     const head = new TalkingHead(nodeAvatar, {
       modelPixelRatio: window.devicePixelRatio,
@@ -65,10 +65,13 @@ const Avatar3D: React.FC<Avatar3DProps> = ({ status, audioStream, isMuted = fals
     loadAvatar();
 
     return () => {
-      // Cleanup if TalkingHead has a destroy method or similar
-      // In this version, we'll just stop animations
       if (headRef.current) {
-         try { headRef.current.streamStop(); } catch(e) {}
+         try { 
+           console.log("DEBUG: Disposing Avatar...");
+           headRef.current.dispose(); 
+         } catch(e) {
+           console.warn("Error during avatar disposal:", e);
+         }
       }
     };
   }, []);
