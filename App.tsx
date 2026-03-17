@@ -62,6 +62,8 @@ const AppContent: React.FC = () => {
   const [yearsOfExperience, setYearsOfExperience] = useState<number | ''>('');
   const [skills, setSkills] = useState<Skill[]>([]);
   const [interviewDetails, setInterviewDetails] = useState<string>('');
+  const [resumeText, setResumeText] = useState<string>('');
+  const [jdText, setJdText] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,7 +260,9 @@ const AppContent: React.FC = () => {
             feedback: feedbackText,
             transcript: fullTranscriptMessages,
             metrics: generatedMetrics,
-            recordingUrl: recordingUrl // Link the recording to the history record
+            recordingUrl: recordingUrl, // Link the recording to the history record
+            resumeText,
+            jdText
         };
 
         setCurrentMetrics(generatedMetrics);
@@ -276,7 +280,7 @@ const AppContent: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, topic, userName, cleanupAudio, yearsOfExperience, skills, interviewDetails]);
+  }, [messages, topic, userName, cleanupAudio, yearsOfExperience, skills, interviewDetails, resumeText, jdText]);
 
   useEffect(() => {
     // Fix: A more reliable way to trigger feedback generation
@@ -373,7 +377,7 @@ const AppContent: React.FC = () => {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-latest',
         config: {
-          systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, interviewDetails) }] },
+          systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, interviewDetails, resumeText, jdText) }] },
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -586,6 +590,8 @@ const AppContent: React.FC = () => {
     setYearsOfExperience(record.yearsOfExperience ?? '');
     setSkills(record.skills ?? []);
     setInterviewDetails(record.interviewDetails ?? '');
+    setResumeText(record.resumeText ?? '');
+    setJdText(record.jdText ?? '');
     setMessages(record.transcript);
     setFeedback(record.feedback);
     setCurrentMetrics(record.metrics || undefined);
@@ -633,6 +639,10 @@ const AppContent: React.FC = () => {
             setSkills={setSkills}
             interviewDetails={interviewDetails}
             setInterviewDetails={setInterviewDetails}
+            resumeText={resumeText}
+            setResumeText={setResumeText}
+            jdText={jdText}
+            setJdText={setJdText}
             onStart={() => startInterview(false)}
             isLoading={isLoading}
             error={error}

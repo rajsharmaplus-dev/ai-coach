@@ -14,6 +14,10 @@ interface SetupScreenProps {
   setSkills: (skills: Skill[]) => void;
   interviewDetails: string;
   setInterviewDetails: (details: string) => void;
+  resumeText: string;
+  setResumeText: (text: string) => void;
+  jdText: string;
+  setJdText: (text: string) => void;
   onStart: () => void;
   isLoading: boolean;
   error: string | null;
@@ -39,10 +43,12 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
   skills, setSkills, interviewDetails, setInterviewDetails,
   audioInputId, setAudioInputId, audioOutputId, setAudioOutputId,
   micGain, setMicGain, noiseCancellation, setNoiseCancellation,
-  noiseThreshold, setNoiseThreshold, theme, toggleTheme
+  noiseThreshold, setNoiseThreshold, theme, toggleTheme,
+  resumeText, setResumeText, jdText, setJdText
 }) => {
   const [currentSkill, setCurrentSkill] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDeepContext, setShowDeepContext] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const tempStreamRef = useRef<MediaStream | null>(null);
 
@@ -426,7 +432,14 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         /* ── Advanced Settings ── */
         .s-advanced {
           border-top: 1px solid var(--border-subtle);
-          padding-top: var(--sp-5);
+          padding-top: var(--sp-4);
+          margin-top: var(--sp-1);
+        }
+
+        .s-deep-context {
+          border-top: none;
+          padding-top: 0;
+          margin-top: calc(-1 * var(--sp-2));
         }
 
         .s-advanced-toggle {

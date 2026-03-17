@@ -42,6 +42,8 @@ export interface InterviewRecord {
   feedback: string;
   metrics?: KPIs;
   recordingUrl?: string | null;
+  resumeText?: string;
+  jdText?: string;
   transcript: Message[];
 }
 
