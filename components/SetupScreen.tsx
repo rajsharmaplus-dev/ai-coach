@@ -184,7 +184,107 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             </div>
           </div>
 
+          {/* Deep Context Integration */}
+          <div className="s-advanced s-deep-context">
+            <button
+              className="s-advanced-toggle"
+              onClick={() => setShowDeepContext(!showDeepContext)}
+              type="button"
+              style={{ color: showDeepContext ? 'var(--cyan-500)' : 'var(--text-secondary)' }}
+            >
+              <span className="flex items-center gap-2">
+                <BrainCircuitIcon size={16} />
+                <span>Deep Context (Resume & JD)</span>
+              </span>
+              <span className="s-chevron" aria-hidden="true">{showDeepContext ? '−' : '+'}</span>
+            </button>
+
+            {showDeepContext && (
+              <div className="s-advanced-panel animate-fade-slide" style={{ marginTop: 'var(--sp-4)', padding: 'var(--sp-4)' }}>
+                <div className="s-field">
+                  <label className="label">Full Resume Text</label>
+                  <textarea
+                    value={resumeText}
+                    onChange={e => setResumeText(e.target.value)}
+                    placeholder="Paste your professional experience here..."
+                    rows={4}
+                  />
+                </div>
+                <div className="s-field" style={{ marginTop: 'var(--sp-4)' }}>
+                  <label className="label">Target Job Description</label>
+                  <textarea
+                    value={jdText}
+                    onChange={e => setJdText(e.target.value)}
+                    placeholder="Paste the requirements or company context..."
+                    rows={4}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Advanced Settings */}
+          <div className="s-advanced">
+            <button
+              className="s-advanced-toggle"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              type="button"
+            >
+              <span className="flex items-center gap-2">
+                <SettingsIcon size={16} />
+                <span>Audio & Hardware Settings</span>
+              </span>
+              <span className="s-chevron" aria-hidden="true">{showAdvanced ? '−' : '+'}</span>
+            </button>
+
+            {showAdvanced && (
+              <div className="s-advanced-panel animate-fade-slide">
+                <div className="s-settings-grid">
+                  <div className="s-field">
+                    <label className="label"><MicrophoneIcon size={13} /> Audio Input</label>
+                    <select value={audioInputId} onChange={e => setAudioInputId(e.target.value)}>
+                      <option value="">Default Microphone</option>
+                      {devices.filter(d => d.kind === 'audioinput').map(d => (
+                        <option key={d.deviceId} value={d.deviceId}>{d.label || `Microphone (${d.deviceId.slice(0,6)})`}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="s-field">
+                    <label className="label"><SpeakerIcon size={13} /> Audio Output</label>
+                    <select value={audioOutputId} onChange={e => setAudioOutputId(e.target.value)}>
+                      <option value="">Default Speakers</option>
+                      {devices.filter(d => d.kind === 'audiooutput').map(d => (
+                        <option key={d.deviceId} value={d.deviceId}>{d.label || `Speaker (${d.deviceId.slice(0,6)})`}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="s-field">
+                    <div className="s-label-row">
+                      <label className="label">Mic Input Gain</label>
+                      <span className="s-value-pill">{micGain.toFixed(1)}×</span>
+                    </div>
+                    <input type="range" min="0" max="2" step="0.1" value={micGain} onChange={e => setMicGain(parseFloat(e.target.value))} />
+                  </div>
+                  <div className="s-field s-field--checkbox">
+                    <label className="s-checkbox-label">
+                      <input type="checkbox" checked={noiseCancellation} onChange={e => setNoiseCancellation(e.target.checked)} />
+                      <span className="s-checkmark" />
+                      <span>Noise Gate</span>
+                    </label>
+                    {noiseCancellation && (
+                      <>
+                        <div className="s-label-row" style={{ marginTop: '1rem' }}>
+                          <label className="label">Threshold</label>
+                          <span className="s-value-pill">{noiseThreshold} dB</span>
+                        </div>
+                        <input type="range" min="-100" max="-20" step="1" value={noiseThreshold} onChange={e => setNoiseThreshold(parseInt(e.target.value))} />
+                        <p className="s-hint">Higher values = more aggressive noise filtering.</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Error */}
