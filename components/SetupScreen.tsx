@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { BrainCircuitIcon, SettingsIcon, MicrophoneIcon, SpeakerIcon, SunIcon, MoonIcon } from './icons';
-import type { InterviewRecord, Skill } from '../types';
+import type { InterviewRecord, Skill, InterviewerLanguage } from '../types';
 import { ProficiencyLevel as ProficiencyLevelEnum } from '../types';
 
 interface SetupScreenProps {
@@ -35,6 +35,11 @@ interface SetupScreenProps {
   setNoiseThreshold: (threshold: number) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  language: InterviewerLanguage;
+  setLanguage: (lang: InterviewerLanguage) => void;
+  onResumeDraft: () => void;
+  hasDraft: boolean;
+  onCondense: (type: 'resume' | 'jd') => void;
 }
 
 const SetupScreen: React.FC<SetupScreenProps> = ({
@@ -44,13 +49,17 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
   audioInputId, setAudioInputId, audioOutputId, setAudioOutputId,
   micGain, setMicGain, noiseCancellation, setNoiseCancellation,
   noiseThreshold, setNoiseThreshold, theme, toggleTheme,
-  resumeText, setResumeText, jdText, setJdText
+  resumeText, setResumeText, jdText, setJdText,
+  language, setLanguage, onResumeDraft, hasDraft, onCondense
 }) => {
   const [currentSkill, setCurrentSkill] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDeepContext, setShowDeepContext] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [previewMicLevel, setPreviewMicLevel] = useState(0);
+  const [isPreviewActive, setIsPreviewActive] = useState(false);
   const tempStreamRef = useRef<MediaStream | null>(null);
+  const previewAudioCtxRef = useRef<AudioContext | null>(null);
 
   const refreshDevices = useCallback(async () => {
     try {
@@ -70,8 +79,78 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         tempStreamRef.current.getTracks().forEach(t => t.stop());
         tempStreamRef.current = null;
       }
+      previewAudioCtxRef.current?.close();
     };
   }, [refreshDevices]);
+
+  // Mic Preview Logic
+  React.useEffect(() => {
+    let animationFrame: number;
+    let isMounted = true;
+
+    const stopPreview = () => {
+      if (tempStreamRef.current) {
+        tempStreamRef.current.getTracks().forEach(t => t.stop());
+        tempStreamRef.current = null;
+      }
+      if (previewAudioCtxRef.current) {
+        previewAudioCtxRef.current.close();
+        previewAudioCtxRef.current = null;
+      }
+      if (isMounted) {
+        setPreviewMicLevel(0);
+        setIsPreviewActive(false);
+      }
+    };
+
+    const startPreview = async () => {
+      if (!showAdvanced) {
+        stopPreview();
+        return;
+      }
+
+      try {
+        const constraints = {
+          audio: audioInputId ? { deviceId: { exact: audioInputId } } : true,
+          video: false
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!isMounted) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+        tempStreamRef.current = stream;
+        setIsPreviewActive(true);
+
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        previewAudioCtxRef.current = ctx;
+        const source = ctx.createMediaStreamSource(stream);
+        const processor = ctx.createScriptProcessor(2048, 1, 1);
+
+        source.connect(processor);
+        processor.connect(ctx.destination);
+
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0);
+          let sum = 0;
+          for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+          const rms = Math.sqrt(sum / input.length);
+          // Scale for visualization
+          if (isMounted) setPreviewMicLevel(Math.min(1, rms * 10));
+        };
+      } catch (err) {
+        console.warn('Preview stream failed:', err);
+        if (isMounted) setIsPreviewActive(false);
+      }
+    };
+
+    startPreview();
+
+    return () => {
+      isMounted = false;
+      stopPreview();
+    };
+  }, [showAdvanced, audioInputId]);
 
   const handleAddSkill = () => {
     if (currentSkill.trim() && !skills.some(s => s.name === currentSkill.trim())) {
@@ -133,7 +212,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                 placeholder="e.g. Staff Engineer"
               />
             </div>
-            <div className="s-field">
+             <div className="s-field">
               <label className="label" htmlFor="exp">Years of Experience</label>
               <input
                 id="exp"
@@ -144,6 +223,18 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                 onChange={e => setYearsOfExperience(e.target.value === '' ? '' : parseInt(e.target.value))}
                 placeholder="5"
               />
+            </div>
+            <div className="s-field">
+              <label className="label" htmlFor="language">Interview Language</label>
+              <select
+                id="language"
+                value={language}
+                onChange={e => setLanguage(e.target.value as any)}
+              >
+                <option value="English">English</option>
+                <option value="Hindi">Hindi</option>
+                <option value="Hinglish">Hinglish</option>
+              </select>
             </div>
 
             {/* Skills */}
@@ -201,8 +292,13 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
 
             {showDeepContext && (
               <div className="s-advanced-panel animate-fade-slide" style={{ marginTop: 'var(--sp-4)', padding: 'var(--sp-4)' }}>
-                <div className="s-field">
-                  <label className="label">Full Resume Text</label>
+                 <div className="s-field">
+                  <div className="s-label-row">
+                    <label className="label">Full Resume Text</label>
+                    {resumeText.length > 500 && (
+                      <button className="s-condense-btn" onClick={() => onCondense('resume')} type="button">✨ AI Condense</button>
+                    )}
+                  </div>
                   <textarea
                     value={resumeText}
                     onChange={e => setResumeText(e.target.value)}
@@ -210,8 +306,13 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                     rows={4}
                   />
                 </div>
-                <div className="s-field" style={{ marginTop: 'var(--sp-4)' }}>
-                  <label className="label">Target Job Description</label>
+                 <div className="s-field" style={{ marginTop: 'var(--sp-4)' }}>
+                  <div className="s-label-row">
+                    <label className="label">Target Job Description</label>
+                    {jdText.length > 500 && (
+                      <button className="s-condense-btn" onClick={() => onCondense('jd')} type="button">✨ AI Condense</button>
+                    )}
+                  </div>
                   <textarea
                     value={jdText}
                     onChange={e => setJdText(e.target.value)}
@@ -258,13 +359,39 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                       ))}
                     </select>
                   </div>
-                  <div className="s-field">
+                   <div className="s-field">
                     <div className="s-label-row">
                       <label className="label">Mic Input Gain</label>
                       <span className="s-value-pill">{micGain.toFixed(1)}×</span>
                     </div>
                     <input type="range" min="0" max="2" step="0.1" value={micGain} onChange={e => setMicGain(parseFloat(e.target.value))} />
                   </div>
+
+                  {/* Mic Level Meter */}
+                  <div className="s-field s-field--full">
+                    <div className="s-label-row">
+                      <label className="label">Hardware Level Check</label>
+                      <span className={`s-value-pill ${isPreviewActive && (20 * Math.log10(previewMicLevel/10 || 0.0001)) > noiseThreshold ? 'pulse-success' : ''}`}>
+                         {isPreviewActive ? ( (20 * Math.log10(previewMicLevel/10 || 0.0001)) > noiseThreshold ? 'Threshold Met' : 'Listening...' ) : 'Mic Inactive'}
+                      </span>
+                    </div>
+                    <div className="s-meter-container">
+                      <div 
+                        className="s-meter-fill" 
+                        style={{ 
+                          width: `${previewMicLevel * 100}%`,
+                          background: (20 * Math.log10(previewMicLevel/10 || 0.0001)) > noiseThreshold ? 'var(--cyan-500)' : 'var(--text-tertiary)'
+                        }} 
+                      />
+                      <div 
+                        className="s-meter-threshold" 
+                        style={{ left: `${((noiseThreshold + 100) / 80) * 100}%` }}
+                        title={`Noise Gate: ${noiseThreshold}dB`}
+                      />
+                    </div>
+                    <p className="s-hint">Speak to ensure the blue bar crosses the threshold marker.</p>
+                  </div>
+
                   <div className="s-field s-field--checkbox">
                     <label className="s-checkbox-label">
                       <input type="checkbox" checked={noiseCancellation} onChange={e => setNoiseCancellation(e.target.checked)} />
@@ -295,20 +422,31 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             </div>
           )}
 
-          {/* CTA */}
-          <button
-            className="btn-primary s-start-btn pulse-primary"
-            onClick={onStart}
-            disabled={!canStart}
-            data-testid="start-interview-button"
-            aria-label="Start interview session"
-          >
-            {isLoading ? (
-              <><div className="s-spinner" aria-hidden="true" /><span>Initializing Session...</span></>
-            ) : (
-              <><BrainCircuitIcon size={20} /><span>Initiate Interview</span></>
+           {/* CTA */}
+          <div className="s-cta-row">
+            <button
+              className="btn-primary s-start-btn pulse-primary"
+              onClick={onStart}
+              disabled={!canStart}
+              data-testid="start-interview-button"
+            >
+              {isLoading ? (
+                <><div className="s-spinner" /><span>Initializing...</span></>
+              ) : (
+                <><BrainCircuitIcon size={20} /><span>Initiate Interview</span></>
+              )}
+            </button>
+            
+            {hasDraft && (
+              <button 
+                className="btn-outline s-resume-btn animate-fade-in" 
+                onClick={onResumeDraft}
+                type="button"
+              >
+                Resume Last Session
+              </button>
             )}
-          </button>
+          </div>
         </section>
 
         {/* Right — History */}
@@ -412,9 +550,9 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         .s-panel-subtitle { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.6; }
 
         /* ── Form Grid ── */
-        .s-form-grid {
+         .s-form-grid {
           display: grid;
-          grid-template-columns: 1.2fr 1.2fr 1fr;
+          grid-template-columns: repeat(4, 1fr);
           gap: var(--sp-4);
         }
         @media (max-width: 600px) {
@@ -522,13 +660,29 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
           margin-bottom: var(--sp-2);
         }
 
-        .s-value-pill {
+         .s-value-pill {
           font-size: var(--text-xs);
           font-weight: 700;
           color: var(--purple-500);
           background: var(--purple-100);
           padding: 2px var(--sp-2);
           border-radius: var(--radius-full);
+        }
+
+        .s-condense-btn {
+          font-size: var(--text-xs);
+          font-weight: 700;
+          color: var(--cyan-600);
+          background: rgba(6,182,212,0.1);
+          border: 1px solid var(--cyan-200);
+          padding: 2px var(--sp-2);
+          border-radius: var(--radius-full);
+          cursor: pointer;
+          transition: all var(--duration-fast);
+        }
+        .s-condense-btn:hover {
+          background: var(--cyan-100);
+          border-color: var(--cyan-500);
         }
 
         .s-hint { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: var(--sp-2); }
@@ -587,13 +741,29 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         }
 
         /* ── CTA Button ── */
+         .s-cta-row {
+          display: flex;
+          flex-direction: column;
+          gap: var(--sp-3);
+          margin-top: var(--sp-2);
+        }
+
         .s-start-btn {
           width: 100%;
           height: 3.5rem;
           font-size: var(--text-lg);
-          /* No border-radius override — inherits var(--radius-full) pill from .btn-primary */
           letter-spacing: 0.01em;
-          margin-top: var(--sp-2);
+        }
+
+        .s-resume-btn {
+          width: 100%;
+          height: 3rem;
+          font-size: var(--text-sm);
+          border-color: var(--cyan-500);
+          color: var(--cyan-500);
+        }
+        .s-resume-btn:hover {
+          background: rgba(6,182,212,0.1);
         }
         .s-spinner {
           width: 1.125rem; height: 1.125rem;
@@ -678,10 +848,42 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
           color: var(--purple-500);
           line-height: 1;
         }
-        .s-score-denom {
+         .s-score-denom {
           font-size: var(--text-xs);
           font-weight: 600;
           color: var(--text-tertiary);
+        }
+
+        /* ── Meter ── */
+        .s-meter-container {
+          height: 8px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 4px;
+          position: relative;
+          overflow: hidden;
+          margin-top: 4px;
+        }
+        .s-meter-fill {
+          height: 100%;
+          transition: width 0.1s ease-out, background 0.2s ease;
+        }
+        .s-meter-threshold {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 2px;
+          background: var(--red-500);
+          z-index: 2;
+        }
+        .pulse-success {
+          color: var(--cyan-100) !important;
+          background: var(--cyan-800) !important;
+          animation: pulse-cyan 1.5s infinite;
+        }
+        @keyframes pulse-cyan {
+          0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.4); }
+          70% { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
         }
 
         @keyframes spin { to { transform: rotate(360deg); } }

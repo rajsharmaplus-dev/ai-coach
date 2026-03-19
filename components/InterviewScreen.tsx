@@ -22,6 +22,8 @@ interface InterviewScreenProps {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   aiAudioChunk: Int16Array | null;
+  onInterrupt: () => void;
+  networkQuality: 'GOOD' | 'POOR' | 'CRITICAL';
 }
 
 const STATUS_CONFIG: Record<InterviewStatus, { label: string; cls: string }> = {
@@ -35,7 +37,7 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
   messages, onSendMessage, isLoading, onRequestEndInterview, onCancelInterview,
   interviewStatus, currentInputTranscription, isEnding, userName,
   interviewStartTime, connectionError, onReconnect, isReconnecting,
-  localMediaStream, micLevel, theme, toggleTheme, aiAudioChunk
+  localMediaStream, micLevel, theme, toggleTheme, aiAudioChunk, onInterrupt, networkQuality
 }) => {
   const [input, setInput] = useState('');
   const [elapsed, setElapsed] = useState(0);
@@ -90,9 +92,20 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
             <span className="i-status-dot" />
             {statusLabel}
           </span>
+          {interviewStatus === 'SPEAKING' && (
+            <button className="i-interrupt-btn animate-fade-in" onClick={onInterrupt}>
+              Stop Speaking
+            </button>
+          )}
           <div className="i-timer">
             <ClockIcon size={13} />
             <span>{formatTime(elapsed)}</span>
+          </div>
+
+          <div className="i-network-signal" title={`Network Quality: ${networkQuality}`}>
+            <div className={`i-signal-bar ${networkQuality === 'GOOD' ? 'active-good' : networkQuality === 'POOR' ? 'active-poor' : 'active-critical'}`} style={{ height: '6px' }} />
+            <div className={`i-signal-bar ${networkQuality === 'GOOD' ? 'active-good' : networkQuality === 'POOR' ? 'active-poor' : ''}`} style={{ height: '10px' }} />
+            <div className={`i-signal-bar ${networkQuality === 'GOOD' ? 'active-good' : ''}`} style={{ height: '14px' }} />
           </div>
         </div>
 
@@ -313,6 +326,37 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           border-radius: 50%;
           animation: spin 0.7s linear infinite;
         }
+
+        .i-interrupt-btn {
+          background: var(--purple-100);
+          border: 1px solid var(--purple-200);
+          color: var(--purple-500);
+          padding: 4px 12px;
+          border-radius: var(--radius-full);
+          font-size: var(--text-xs);
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .i-interrupt-btn:hover {
+          background: var(--purple-200);
+          transform: translateY(-1px);
+        }
+
+        .i-network-signal {
+          display: flex;
+          align-items: flex-end;
+          gap: 2px;
+          margin-left: var(--sp-2);
+        }
+        .i-signal-bar {
+          width: 3px;
+          background: rgba(255,255,255,0.1);
+          border-radius: 1px;
+        }
+        .active-good { background: var(--green-500) !important; }
+        .active-poor { background: var(--yellow-500) !important; }
+        .active-critical { background: var(--red-500) !important; }
 
         /* Error Banner */
         .i-error-banner {
@@ -558,12 +602,14 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
 
         /* User Preview */
         .i-user-preview {
-          width: 3.5rem; height: 3.5rem;
-          border-radius: var(--radius-md);
+          width: 200px;
+          height: 150px;
+          border-radius: var(--radius-lg);
           overflow: hidden;
           border: 1px solid var(--border-medium);
           position: relative;
           flex-shrink: 0;
+          box-shadow: var(--shadow-md);
         }
         .i-user-preview video {
           width: 100%; height: 100%;

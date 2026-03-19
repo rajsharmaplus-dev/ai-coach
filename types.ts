@@ -51,3 +51,5 @@ export interface DeviceInfo {
   id: string;
   label: string;
 }
+
+export type InterviewerLanguage = 'English' | 'Hindi' | 'Hinglish';

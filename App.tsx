@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 // Fix: Correctly import GoogleGenAI, remove Blob as it is not exported
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
-import { AppState, Message, InterviewStatus, InterviewRecord, Skill, KPIs } from './types';
+import { AppState, ProficiencyLevel, type Message, type Skill, type InterviewStatus, type InterviewRecord, type KPIs, type DeviceInfo, type InterviewerLanguage } from './types';
 import { getInitialSystemPrompt, getFeedbackPrompt } from './constants';
 import SetupScreen from './components/SetupScreen';
 import InterviewScreen from './components/InterviewScreen';
@@ -58,6 +58,7 @@ const AppContent: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const [appState, setAppState] = useState<AppState>(AppState.SETUP);
   const [topic, setTopic] = useState<string>('');
+  const [language, setLanguage] = useState<InterviewerLanguage>('English');
   const [userName, setUserName] = useState<string>('');
   const [yearsOfExperience, setYearsOfExperience] = useState<number | ''>('');
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -164,16 +165,22 @@ const AppContent: React.FC = () => {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const [networkQuality, setNetworkQuality] = useState<'GOOD' | 'POOR' | 'CRITICAL'>('GOOD');
+  const lastAudioReceiptRef = useRef<number>(0);
+  const networkCheckIntervalRef = useRef<number | null>(null);
   const nextAudioStartTimeRef = useRef<number>(0);
   const currentInputTranscriptionRef = useRef<string>('');
   const currentOutputTranscriptionRef = useRef<string>('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recorderDestinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
+  const MAX_RECONNECT_ATTEMPTS = 3;
   
   // Refs for audio settings to be used in the audio processing callback
   const noiseCancellationRef = useRef(noiseCancellation);
   const noiseThresholdRef = useRef(noiseThreshold);
+  const bargeInCounterRef = useRef(0);
 
   useEffect(() => {
     noiseCancellationRef.current = noiseCancellation;
@@ -209,12 +216,52 @@ const AppContent: React.FC = () => {
     setLastTurnTimestamp(null);
     setInterviewStartTime(null);
     setRecordingUrl(null);
+    setNetworkQuality('GOOD'); // Reset network quality
+    lastAudioReceiptRef.current = 0; // Reset audio receipt timestamp
   }, [cleanupAudio]);
+
+  const interruptAi = useCallback(() => {
+    if (audioSourcesRef.current.size > 0) {
+      console.log(`DEBUG: Interrupting AI. Stopping ${audioSourcesRef.current.size} active audio sources.`);
+      audioSourcesRef.current.forEach(source => {
+        try { source.stop(); } catch (e) { /* Node might already be stopped */ }
+      });
+      audioSourcesRef.current.clear();
+      nextAudioStartTimeRef.current = 0;
+      setInterviewStatus('LISTENING');
+    }
+    setAppState(AppState.SETUP);
+  }, []);
+
+  const handleResumeDraft = () => {
+    const raw = localStorage.getItem('sanai-interview-draft');
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      setTopic(draft.topic);
+      setUserName(draft.userName);
+      setYearsOfExperience(draft.yearsOfExperience);
+      setSkills(draft.skills);
+      setLanguage(draft.language || 'English');
+      setInterviewDetails(draft.interviewDetails || '');
+      setResumeText(draft.resumeText || '');
+      setJdText(draft.jdText || '');
+      setMessages(draft.messages || []);
+      
+      // We don't jump straight into INTERVIEWING because the WebSocket needs to be re-established
+      // But we have the context loaded now.
+      localStorage.removeItem('sanai-interview-draft');
+      alert("Previous session context restored. Click 'Initiate Interview' to reconnect.");
+    } catch (e) {
+      console.error("Failed to resume draft:", e);
+    }
+  };
 
   const endInterviewAndGetFeedback = useCallback(async () => {
     sessionRef.current?.close();
     cleanupAudio();
     setIsLoading(true);
+    localStorage.removeItem('sanai-interview-draft'); // Clear draft on normal end
     setAppState(AppState.FEEDBACK);
 
     const fullTranscriptMessages = [...messages];
@@ -227,19 +274,23 @@ const AppContent: React.FC = () => {
             .map(m => `${m.sender}: ${m.text}`)
             .join('\n');
         
-        const MAX_TRANSCRIPT_LENGTH = 150000;
-        let processedTranscript = transcript;
-        if (transcript.length > MAX_TRANSCRIPT_LENGTH) {
-            console.warn(`Transcript too long (${transcript.length} chars), truncating from the beginning.`);
-            processedTranscript = transcript.substring(transcript.length - MAX_TRANSCRIPT_LENGTH);
+        const MAX_TRANSCRIPT_LENGTH = 120000; // Safer margin
+        let joinedTranscript = '';
+        let slicedMessages = [...fullTranscriptMessages];
+        
+        while (slicedMessages.length > 0) {
+            joinedTranscript = slicedMessages.map(m => `${m.sender}: ${m.text}`).join('\n');
+            if (joinedTranscript.length <= MAX_TRANSCRIPT_LENGTH) break;
+            slicedMessages.shift(); // Drop the oldest message
+            console.warn(`Transcript too long, dropped oldest message. Remaining length: ${joinedTranscript.length}`);
         }
 
-        const feedbackPrompt = getFeedbackPrompt(topic, processedTranscript);
-        const response = await ai.models.generateContent({model: 'gemini-2.5-flash', contents: feedbackPrompt});
+        const feedbackPrompt = getFeedbackPrompt(topic, joinedTranscript);
+        const response = await ai.models.generateContent({model: 'gemini-2.0-flash', contents: feedbackPrompt});
         const feedbackText = response.text;
         setFeedback(feedbackText);
 
-        const scoreMatch = feedbackText.match(/Performance Score: (\d+)\/10/);
+        const scoreMatch = feedbackText.match(/(?:Performance\s*Score|Score|Final\s*Score):\s*(\d+)\/10/i);
         const score = scoreMatch ? parseInt(scoreMatch[1], 10) : null;
         
         // Mock metrics generation for the premium visuals
@@ -270,8 +321,23 @@ const AppContent: React.FC = () => {
         setCurrentMetrics(generatedMetrics);
 
         const savedInterviews = JSON.parse(localStorage.getItem('synthia-interviews') || '[]');
-        const updatedInterviews = [newRecord, ...savedInterviews];
-        localStorage.setItem('synthia-interviews', JSON.stringify(updatedInterviews));
+        let updatedInterviews = [newRecord, ...savedInterviews];
+        
+        // Robust Storage Strategy: Catch QuotaExceededError and trim history if needed
+        const saveToStorage = (data: InterviewRecord[]) => {
+          try {
+            localStorage.setItem('synthia-interviews', JSON.stringify(data));
+            return true;
+          } catch (err) {
+            console.warn("Storage quota exceeded, trimming history...", err);
+            return false;
+          }
+        };
+
+        while (!saveToStorage(updatedInterviews) && updatedInterviews.length > 1) {
+          updatedInterviews.pop(); // Remove the oldest interview
+        }
+        
         setPastInterviews(updatedInterviews);
 
     } catch (e) {
@@ -282,7 +348,19 @@ const AppContent: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, topic, userName, cleanupAudio, yearsOfExperience, skills, interviewDetails, resumeText, jdText]);
+  }, [messages, topic, userName, cleanupAudio, yearsOfExperience, skills, interviewDetails, resumeText, jdText, recordingUrl, language]);
+
+  // Session Persistency Effect: Auto-save draft whenever critical state changes
+  useEffect(() => {
+    if (appState === AppState.INTERVIEWING && topic) {
+      const draft = {
+        topic, userName, yearsOfExperience, skills, language,
+        interviewDetails, resumeText, jdText, messages,
+        timestamp: Date.now()
+      };
+      localStorage.setItem('sanai-interview-draft', JSON.stringify(draft));
+    }
+  }, [appState, topic, userName, yearsOfExperience, skills, language, interviewDetails, resumeText, jdText, messages]);
 
   useEffect(() => {
     // Fix: A more reliable way to trigger feedback generation
@@ -313,6 +391,8 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     currentInputTranscriptionRef.current = '';
     setCurrentInputTranscription('');
+    setNetworkQuality('GOOD'); // Reset network quality on new interview start
+    lastAudioReceiptRef.current = 0; // Reset audio receipt timestamp
 
     // Internal tracker for where we are in the startup process
     let currentStep = "Initializing";
@@ -380,7 +460,7 @@ const AppContent: React.FC = () => {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-latest',
         config: {
-          systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, interviewDetails, resumeText, jdText) }] },
+          systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, language, interviewDetails, resumeText, jdText) }] },
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         },
@@ -400,12 +480,13 @@ const AppContent: React.FC = () => {
             if (message.setupComplete) {
               console.log("DEBUG: setupComplete received. Session is ready.");
               isSessionReadyRef.current = true;
+              reconnectAttemptsRef.current = 0; // Reset on success
               if (!isReconnect) {
                 setInterviewStartTime(Date.now());
                 try {
                   setTimeout(() => {
                     if (isSessionReadyRef.current && sessionRef.current) {
-                      console.log("DEBUG: Sending initial prompt after 1000ms stability delay...");
+                      console.log("DEBUG: Sending initial prompt after 3000ms stability delay...");
                       sessionRef.current.sendClientContent({
                         turns: [{ 
                           role: 'user', 
@@ -419,7 +500,7 @@ const AppContent: React.FC = () => {
                          console.log("DEBUG: User Mic Stream Activated.");
                       }, 1500);
                     }
-                  }, 1000);
+                  }, 3000);
                 } catch (err) {
                   console.error("DEBUG: Failed to send initial prompt:", err);
                 }
@@ -434,24 +515,17 @@ const AppContent: React.FC = () => {
             if (message.serverContent) {
               const sc = message.serverContent;
               
-              if (sc.inputTranscription) {
-                const text = sc.inputTranscription.text;
-                console.log(`DEBUG: [User Transcribing] "${text}"`);
-                currentInputTranscriptionRef.current += text;
-                setCurrentInputTranscription(currentInputTranscriptionRef.current);
-                // Command handling
-                const norm = currentInputTranscriptionRef.current.toLowerCase();
-                if (norm.includes('sanai') && norm.includes('end interview')) setIsEndingInterview(true);
-              }
-              
-              if (sc.outputTranscription) {
-                console.log(`DEBUG: [AI Transcribing] "${sc.outputTranscription.text}"`);
-                currentOutputTranscriptionRef.current += sc.outputTranscription.text;
-              }
-              
-              if (sc.modelTurn?.parts[0]?.inlineData?.data) {
-                setInterviewStatus('SPEAKING');
+              if (sc.modelTurn?.parts?.[0]?.inlineData) {
+                const now = Date.now();
+                if (lastAudioReceiptRef.current > 0) {
+                  const gap = now - lastAudioReceiptRef.current;
+                  if (gap > 800) setNetworkQuality('POOR');
+                  else if (gap < 400) setNetworkQuality('GOOD');
+                }
+                lastAudioReceiptRef.current = now;
+                
                 const base64Audio = sc.modelTurn.parts[0].inlineData.data;
+                setInterviewStatus('SPEAKING');
                 if (outputAudioContextRef.current) {
                   try {
                     const rawAudio = decode(base64Audio);
@@ -474,8 +548,8 @@ const AppContent: React.FC = () => {
                       audioSourcesRef.current.delete(source);
                       if (audioSourcesRef.current.size === 0) setInterviewStatus('LISTENING');
                     };
-                    const now = outputAudioContextRef.current.currentTime;
-                    nextAudioStartTimeRef.current = Math.max(now, nextAudioStartTimeRef.current);
+                    const nowAudio = outputAudioContextRef.current.currentTime;
+                    nextAudioStartTimeRef.current = Math.max(nowAudio, nextAudioStartTimeRef.current);
                     source.start(nextAudioStartTimeRef.current);
                     nextAudioStartTimeRef.current += buf.duration;
                     audioSourcesRef.current.add(source);
@@ -483,6 +557,21 @@ const AppContent: React.FC = () => {
                     console.error('DEBUG: Audio playback error:', e); 
                   }
                 }
+              }
+              
+              if (sc.inputTranscription) {
+                const text = sc.inputTranscription.text;
+                console.log(`DEBUG: [User Transcribing] "${text}"`);
+                currentInputTranscriptionRef.current += text;
+                setCurrentInputTranscription(currentInputTranscriptionRef.current);
+                // Command handling
+                const norm = currentInputTranscriptionRef.current.toLowerCase();
+                if (norm.includes('sanai') && norm.includes('end interview')) setIsEndingInterview(true);
+              }
+              
+              if (sc.outputTranscription) {
+                console.log(`DEBUG: [AI Transcribing] "${sc.outputTranscription.text}"`);
+                currentOutputTranscriptionRef.current += sc.outputTranscription.text;
               }
               
               if (sc.turnComplete) {
@@ -501,19 +590,47 @@ const AppContent: React.FC = () => {
           onerror: (e: any) => {
             console.error('DEBUG: Gemini WebSocket Error:', e);
             setConnectionError("AI connection lost. Please check your internet or API key.");
+            setNetworkQuality('CRITICAL'); // Mark critical on error
           },
           onclose: (e: any) => {
             const reason = e.reason || "No reason provided";
             console.log(`DEBUG: Gemini WebSocket Closed. Code: ${e.code}, Reason: ${reason}`);
-            isSessionReadyRef.current = false;
+             isSessionReadyRef.current = false;
             
-            if (e.code === 1008 || e.code === 1000) {
-               setError(`Connection closed by Gemini. Reason: ${reason}`);
+            if (networkCheckIntervalRef.current) { // NEW: Clear network check interval on close
+              clearInterval(networkCheckIntervalRef.current);
+              networkCheckIntervalRef.current = null;
             }
-            setInterviewStatus('IDLE');
+
+            if (e.code !== 1000 && e.code !== 1001 && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+              const delay = Math.pow(2, reconnectAttemptsRef.current) * 2000;
+              console.log(`DEBUG: Unexpected close (${e.code}). Retrying in ${delay}ms... (Attempt ${reconnectAttemptsRef.current + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+              
+              setTimeout(() => {
+                reconnectAttemptsRef.current++;
+                setIsReconnecting(true);
+                startInterview(true);
+              }, delay);
+            } else {
+              if (e.code === 1008 || e.code === 1000) {
+                 setError(`Connection closed by Gemini. Reason: ${reason}`);
+              }
+              setInterviewStatus('IDLE');
+              reconnectAttemptsRef.current = 0; // Reset if we give up or normal close
+              setNetworkQuality('CRITICAL'); // Mark critical on final close
+            }
           }
         },
       });
+
+      // Global Network Monitor: If speaking but no audio for 2s, it's critical
+      networkCheckIntervalRef.current = window.setInterval(() => {
+        if (interviewStatus === 'SPEAKING' && lastAudioReceiptRef.current > 0) {
+          if (Date.now() - lastAudioReceiptRef.current > 2500) {
+            setNetworkQuality('CRITICAL');
+          }
+        }
+      }, 1000);
 
       // ── Step 4: Wire Everything and Start Recording ───────────────────────
       currentStep = "Audio Processing & Recording";
@@ -569,6 +686,19 @@ const AppContent: React.FC = () => {
         const { rms, db } = calculateVolume(inputData);
         setMicLevel(rms);
 
+        // Barge-in logic: if Sanai is speaking and the user speaks loudly, interrupt
+        // We use a small counter to ensure it's a sustained sound rather than a spike
+        if (interviewStatus === 'SPEAKING' && db > noiseThresholdRef.current + 12) {
+            bargeInCounterRef.current++;
+            if (bargeInCounterRef.current > 3) { // ~3 chunks = ~40-60ms of sustained speech
+                console.log("DEBUG: Barge-in detected (Voice).");
+                interruptAi();
+                bargeInCounterRef.current = 0;
+            }
+        } else {
+            bargeInCounterRef.current = 0;
+        }
+
         // Periodic logging to verify mic activity without flooding
         const now = Date.now();
         if (now - lastLogRef.time > 5000) {
@@ -594,15 +724,26 @@ const AppContent: React.FC = () => {
       gainNode.connect(scriptProcessorRef.current);
       scriptProcessorRef.current.connect(inputAudioContextRef.current.destination);
 
-    } catch(e: any) {
-      console.error(`Error at [${currentStep}]:`, e);
+    } catch (err: any) {
+      console.error(`Error at [${currentStep}]:`, err);
       cleanupAudio();
-      const msg = e instanceof Error ? e.message : 'Unknown error';
-      setError(`Fatal Error during [${currentStep}]: ${msg}`);
+      let msg = err.message || "Unknown error";
+      if (msg.includes("429") || msg.toLowerCase().includes("quota")) {
+        msg = "Gemini API Quota Exceeded. Please try again in 1-2 minutes or check your Google AI Studio billing.";
+      } else if (msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("key") || msg.toLowerCase().includes("unauthenticated")) {
+        msg = "Invalid Gemini API Key. Please verify the VITE_GEMINI_API_KEY in your environment.";
+      } else if (msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("404")) {
+        msg = "Gemini Model not found. This model might be restricted in your region or outdated.";
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+        msg = "Network connection failed. Please check your internet or firewall.";
+      }
+      
+      setError(`Session Initialization Failed: ${msg}`);
       setIsLoading(false);
       setAppState(AppState.SETUP);
+      setNetworkQuality('CRITICAL');
     }
-  }, [userName, topic, yearsOfExperience, skills, interviewDetails, audioInputId, audioOutputId, micGain, cleanupAudio, isEndingInterview, appState, cancelInterview]);
+  }, [userName, topic, yearsOfExperience, skills, language, interviewDetails, audioInputId, audioOutputId, micGain, cleanupAudio, isEndingInterview, appState, cancelInterview, interviewStatus, interruptAi]);
 
 
   const handleSendMessage = (text: string) => {
@@ -647,8 +788,44 @@ const AppContent: React.FC = () => {
     setRecordingUrl(record.recordingUrl || null);
   };
 
+  const handleRetryFeedback = () => {
+     setError(null);
+     setIsLoading(true);
+     endInterviewAndGetFeedback();
+  };
+
+  const handleCondenseContext = async (type: 'resume' | 'jd') => {
+    const text = type === 'resume' ? resumeText : jdText;
+    if (!text || text.length < 200) return; // Too short to condense
+
+    setIsLoading(true);
+    try {
+      const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API Key missing");
+      const genAI = new GoogleGenAI(apiKey);
+      const model = (genAI as any).getGenerativeModel({ model: "gemini-2.0-flash-lite-preview-02-05" });
+      
+      const prompt = `Condense the following ${type === 'resume' ? 'professional resume' : 'job description'} into a highly structured, punchy, and information-dense summary (max 300 words). Focus on key skills, achievements, and technical requirements. Retain all "must-have" keywords.\n\nTEXT:\n${text}`;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const summary = response.text();
+      
+      if (type === 'resume') setResumeText(summary);
+      else setJdText(summary);
+      
+      alert(`${type === 'resume' ? 'Resume' : 'Job Description'} condensed successfully!`);
+    } catch (err: any) {
+      console.error("Condensing failed:", err);
+      alert("Failed to condense text. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleStartNewInterview = () => {
     cancelInterview();
+    localStorage.removeItem('sanai-interview-draft'); // Clear draft on new start
   };
 
   const handleReconnect = () => {
@@ -681,6 +858,11 @@ const AppContent: React.FC = () => {
             setUserName={setUserName}
             topic={topic}
             setTopic={setTopic}
+            language={language}
+            setLanguage={setLanguage}
+            onResumeDraft={handleResumeDraft}
+            hasDraft={!!localStorage.getItem('sanai-interview-draft')}
+            onCondense={handleCondenseContext}
             yearsOfExperience={yearsOfExperience}
             setYearsOfExperience={setYearsOfExperience}
             skills={skills}
@@ -731,6 +913,8 @@ const AppContent: React.FC = () => {
             theme={theme}
             toggleTheme={toggleTheme}
             aiAudioChunk={aiAudioChunk}
+            onInterrupt={interruptAi}
+            networkQuality={networkQuality}
           />
         );
       case AppState.FEEDBACK:
@@ -745,6 +929,8 @@ const AppContent: React.FC = () => {
             theme={theme}
             toggleTheme={toggleTheme}
             metrics={currentMetrics}
+            onRetry={handleRetryFeedback}
+            error={error}
           />
         );
       default:

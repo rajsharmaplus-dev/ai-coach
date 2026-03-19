@@ -13,6 +13,8 @@ interface FeedbackScreenProps {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   metrics?: KPIs;
+  onRetry?: () => void;
+  error?: string | null;
 }
 
 // ── KPI Bar Card ───────────────────────────────────────────
@@ -36,8 +38,8 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
   </div>
 );
 
-const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
-  feedback, messages, topic, onStartNew, userName, recordingUrl, theme, toggleTheme, metrics
+ const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
+  feedback, messages, topic, onStartNew, userName, recordingUrl, theme, toggleTheme, metrics, onRetry, error
 }) => {
   const kpis: KPIs = metrics ?? { confidence: 85, clarity: 78, technical: 82, pacing: 70 };
 
@@ -140,9 +142,19 @@ const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             </div>
           )}
 
-          {/* AI Insights */}
+           {/* AI Insights */}
           <div className="f-insights">
-            {parsedSections.length > 0 ? (
+            {error ? (
+              <div className="f-insight-card glass-rich f-error-card animate-fade-slide">
+                <h3 className="f-insight-title" style={{ color: '#fca5a5' }}>Analysis Interrupted</h3>
+                <div className="f-insight-body">
+                  <p>{error}</p>
+                  <button className="btn-primary" onClick={onRetry} style={{ marginTop: 'var(--sp-4)', background: 'var(--red-500)' }}>
+                    Retry Intelligence Analysis
+                  </button>
+                </div>
+              </div>
+            ) : parsedSections.length > 0 ? (
               parsedSections.map(({ title, body }, i) => (
                 <div key={i} className="f-insight-card glass-rich animate-fade-slide" style={{ animationDelay: `${i * 0.08}s` }}>
                   <h3 className="f-insight-title">{title}</h3>
@@ -472,6 +484,10 @@ const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
         .f-msg--user .f-msg-text {
           background: rgba(56,189,248,0.06);
           border: 1px solid rgba(56,189,248,0.15);
+        }
+
+        .f-error-card::before {
+          background: var(--red-500) !important;
         }
 
         /* ── Footer ── */
