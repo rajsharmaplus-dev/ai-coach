@@ -50,7 +50,9 @@ export function createBlob(data: Float32Array): LiveAudioChunk {
   const l = data.length;
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
-    int16[i] = data[i] * 32768;
+    // Standard Int16 PCM scaling
+    const s = Math.max(-1, Math.min(1, data[i]));
+    int16[i] = s < 0 ? s * 32768 : s * 32767;
   }
   return {
     data: encode(new Uint8Array(int16.buffer)),

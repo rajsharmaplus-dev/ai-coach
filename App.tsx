@@ -83,7 +83,7 @@ const AppContent: React.FC = () => {
   const [audioInputId, setAudioInputId] = useState<string>('');
   const [audioOutputId, setAudioOutputId] = useState<string>('');
   const [micGain, setMicGain] = useState<number>(1);
-  const [noiseCancellation, setNoiseCancellation] = useState<boolean>(true);
+  const [noiseCancellation, setNoiseCancellation] = useState<boolean>(false);
   const [noiseThreshold, setNoiseThreshold] = useState<number>(-60); // Lowered from -50 to -60 for better sensitivity
   const [micLevel, setMicLevel] = useState<number>(0);
   
@@ -93,6 +93,8 @@ const AppContent: React.FC = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
 
   const sessionRef = useRef<LiveSession | null>(null);
+  const isSessionReadyRef = useRef<boolean>(false);
+  const isAudioActiveRef = useRef(false); // New: Gate audio until handshake is complete
 
   const cleanupAudio = useCallback(() => {
      console.log("Cleaning up audio resources...");
@@ -323,6 +325,7 @@ const AppContent: React.FC = () => {
       const ai = new GoogleGenAI({ apiKey });
 
       setAppState(AppState.INTERVIEWING);
+      isSessionReadyRef.current = false; // Reset on every start
 
       // ── Step 1: Secure Microphone (The absolute priority) ────────────────
       currentStep = "Microphone Access";
@@ -379,8 +382,6 @@ const AppContent: React.FC = () => {
         config: {
           systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, interviewDetails, resumeText, jdText) }] },
           responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         },
         callbacks: {
@@ -388,27 +389,42 @@ const AppContent: React.FC = () => {
               console.log("DEBUG: Gemini WebSocket Connection Opened");
           },
           onmessage: async (message: LiveServerMessage) => {
-            console.log("DEBUG: Received message from Gemini:", message);
+            // Log ALL incoming message types for deep debugging
+            const msgType = Object.keys(message).filter(k => message[k as keyof LiveServerMessage]).join(', ');
+            console.log(`DEBUG: Received [${msgType}] from Gemini:`, message);
+            
             setLastTurnTimestamp(Date.now());
             setConnectionError(null);
             setIsReconnecting(false);
 
             if (message.setupComplete) {
               console.log("DEBUG: setupComplete received. Session is ready.");
+              isSessionReadyRef.current = true;
               if (!isReconnect) {
                 setInterviewStartTime(Date.now());
                 try {
-                  console.log("DEBUG: Sending initial prompt after setupComplete...");
-                  sessionRef.current?.sendClientContent({
-                    turns: [{ 
-                      role: 'user', 
-                      parts: [{ text: "Hello Sanai. I am ready for my interview. Please introduce yourself and ask me the first question based on my background." }] 
-                    }],
-                    turnComplete: true
-                  });
+                  setTimeout(() => {
+                    if (isSessionReadyRef.current && sessionRef.current) {
+                      console.log("DEBUG: Sending initial prompt after 1000ms stability delay...");
+                      sessionRef.current.sendClientContent({
+                        turns: [{ 
+                          role: 'user', 
+                          parts: [{ text: "Hello Sanai. I am ready. Please introduce yourself and start the interview." }] 
+                        }],
+                        turnComplete: true
+                      });
+                      // Only allow audio AFTER the first greeting is dispatched
+                      setTimeout(() => { 
+                         isAudioActiveRef.current = true;
+                         console.log("DEBUG: User Mic Stream Activated.");
+                      }, 1500);
+                    }
+                  }, 1000);
                 } catch (err) {
                   console.error("DEBUG: Failed to send initial prompt:", err);
                 }
+              } else {
+                isAudioActiveRef.current = true; // Reconnects start audio immediately
               }
               setIsLoading(false);
               setInterviewStatus('LISTENING');
@@ -416,27 +432,30 @@ const AppContent: React.FC = () => {
             }
 
             if (message.serverContent) {
-              console.log("DEBUG: serverContent received:", message.serverContent);
-              if (message.serverContent.inputTranscription) {
-                const text = message.serverContent.inputTranscription.text;
+              const sc = message.serverContent;
+              
+              if (sc.inputTranscription) {
+                const text = sc.inputTranscription.text;
+                console.log(`DEBUG: [User Transcribing] "${text}"`);
                 currentInputTranscriptionRef.current += text;
                 setCurrentInputTranscription(currentInputTranscriptionRef.current);
                 // Command handling
                 const norm = currentInputTranscriptionRef.current.toLowerCase();
                 if (norm.includes('sanai') && norm.includes('end interview')) setIsEndingInterview(true);
               }
-              if (message.serverContent.outputTranscription) {
-                currentOutputTranscriptionRef.current += message.serverContent.outputTranscription.text;
+              
+              if (sc.outputTranscription) {
+                console.log(`DEBUG: [AI Transcribing] "${sc.outputTranscription.text}"`);
+                currentOutputTranscriptionRef.current += sc.outputTranscription.text;
               }
-              if (message.serverContent.modelTurn?.parts[0]?.inlineData?.data) {
-                console.log("DEBUG: Audio data received, length:", message.serverContent.modelTurn.parts[0].inlineData.data.length);
+              
+              if (sc.modelTurn?.parts[0]?.inlineData?.data) {
                 setInterviewStatus('SPEAKING');
-                const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
+                const base64Audio = sc.modelTurn.parts[0].inlineData.data;
                 if (outputAudioContextRef.current) {
                   try {
                     const rawAudio = decode(base64Audio);
                     const buf = await decodeAudioData(rawAudio, outputAudioContextRef.current, 24000, 1);
-                    console.log("DEBUG: AudioBuffer created, duration:", buf.duration);
                     const floatData = buf.getChannelData(0);
                     const int16Data = new Int16Array(floatData.length);
                     for (let i = 0; i < floatData.length; i++) {
@@ -452,12 +471,10 @@ const AppContent: React.FC = () => {
                     if (recorderDestinationNodeRef.current) gain.connect(recorderDestinationNodeRef.current);
 
                     source.onended = () => {
-                      console.log("DEBUG: Audio chunk finished playing");
                       audioSourcesRef.current.delete(source);
                       if (audioSourcesRef.current.size === 0) setInterviewStatus('LISTENING');
                     };
                     const now = outputAudioContextRef.current.currentTime;
-                    console.log("DEBUG: Scheduling audio at:", Math.max(now, nextAudioStartTimeRef.current));
                     nextAudioStartTimeRef.current = Math.max(now, nextAudioStartTimeRef.current);
                     source.start(nextAudioStartTimeRef.current);
                     nextAudioStartTimeRef.current += buf.duration;
@@ -465,11 +482,11 @@ const AppContent: React.FC = () => {
                   } catch (e) { 
                     console.error('DEBUG: Audio playback error:', e); 
                   }
-                } else {
-                  console.warn("DEBUG: outputAudioContextRef.current is missing!");
                 }
               }
-              if (message.serverContent.turnComplete) {
+              
+              if (sc.turnComplete) {
+                console.log("DEBUG: Turn Complete received.");
                 const finIn = currentInputTranscriptionRef.current.trim();
                 const finOut = currentOutputTranscriptionRef.current.trim();
                 if (finIn) setMessages(prev => [...prev, { sender: userName, text: finIn }]);
@@ -488,6 +505,7 @@ const AppContent: React.FC = () => {
           onclose: (e: any) => {
             const reason = e.reason || "No reason provided";
             console.log(`DEBUG: Gemini WebSocket Closed. Code: ${e.code}, Reason: ${reason}`);
+            isSessionReadyRef.current = false;
             
             if (e.code === 1008 || e.code === 1000) {
                setError(`Connection closed by Gemini. Reason: ${reason}`);
@@ -544,16 +562,28 @@ const AppContent: React.FC = () => {
         recordingMicGain.connect(recorderDestinationNodeRef.current);
       }
 
+      const lastLogRef = { time: 0, chunkCount: 0 };
       scriptProcessorRef.current = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
       scriptProcessorRef.current.onaudioprocess = (event) => {
         const inputData = event.inputBuffer.getChannelData(0);
         const { rms, db } = calculateVolume(inputData);
         setMicLevel(rms);
+
+        // Periodic logging to verify mic activity without flooding
+        const now = Date.now();
+        if (now - lastLogRef.time > 5000) {
+            console.log(`DEBUG: Mic DB Level: ${db.toFixed(2)}, Chunks Sent: ${lastLogRef.chunkCount}`);
+            lastLogRef.time = now;
+        }
+
         let processed = inputData;
-        if (noiseCancellationRef.current && db < noiseThresholdRef.current) processed = new Float32Array(inputData.length);
+        if (noiseCancellationRef.current && db < noiseThresholdRef.current) {
+            processed = new Float32Array(inputData.length);
+        }
         
-        // Only send to Gemini if the WebSocket is actually OPEN
-        if (sessionRef.current && (sessionRef.current as any).readyState === 1) {
+        // Only send to Gemini if the session and audio gate are ready
+        if (sessionRef.current && isSessionReadyRef.current && isAudioActiveRef.current) {
+          lastLogRef.chunkCount++;
           session.sendRealtimeInput({ media: createBlob(processed) } as any);
         }
 
@@ -576,8 +606,26 @@ const AppContent: React.FC = () => {
 
 
   const handleSendMessage = (text: string) => {
-    // Primarily a voice interface, so text input just adds to the transcript for now.
+    if (!text.trim()) return;
+    
+    // UI Update
     setMessages(prev => [...prev, { sender: userName, text }]);
+    
+    // Send to Gemini
+    if (sessionRef.current && isSessionReadyRef.current) {
+      console.log(`DEBUG: Sending text turn: "${text}"`);
+      try {
+        sessionRef.current.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text }] }],
+          turnComplete: true
+        });
+      } catch (err) {
+        console.error("DEBUG: Failed to send text turn:", err);
+      }
+    } else {
+        console.warn("DEBUG: Cannot send text turn - session not ready.");
+        // Fallback for debugging: still add to UI but warn user
+    }
   };
 
   const handleRequestEndInterview = () => {

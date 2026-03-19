@@ -300,6 +300,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             className="btn-primary s-start-btn pulse-primary"
             onClick={onStart}
             disabled={!canStart}
+            data-testid="start-interview-button"
             aria-label="Start interview session"
           >
             {isLoading ? (
