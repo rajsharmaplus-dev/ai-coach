@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { BrainCircuitIcon, SettingsIcon, MicrophoneIcon, SpeakerIcon, SunIcon, MoonIcon } from './icons';
-import type { InterviewRecord, Skill, InterviewerLanguage } from '../types';
+import type { InterviewRecord, Skill, InterviewerLanguage, Voice } from '../types';
 import { ProficiencyLevel as ProficiencyLevelEnum } from '../types';
 
 interface SetupScreenProps {
@@ -37,6 +37,8 @@ interface SetupScreenProps {
   toggleTheme: () => void;
   language: InterviewerLanguage;
   setLanguage: (lang: InterviewerLanguage) => void;
+  voice: Voice;
+  setVoice: (voice: Voice) => void;
   onResumeDraft: () => void;
   hasDraft: boolean;
   onCondense: (type: 'resume' | 'jd') => void;
@@ -50,7 +52,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
   micGain, setMicGain, noiseCancellation, setNoiseCancellation,
   noiseThreshold, setNoiseThreshold, theme, toggleTheme,
   resumeText, setResumeText, jdText, setJdText,
-  language, setLanguage, onResumeDraft, hasDraft, onCondense
+  language, setLanguage, voice, setVoice, onResumeDraft, hasDraft, onCondense
 }) => {
   const [currentSkill, setCurrentSkill] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -234,6 +236,20 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                 <option value="English">English</option>
                 <option value="Hindi">Hindi</option>
                 <option value="Hinglish">Hinglish</option>
+              </select>
+            </div>
+            <div className="s-field">
+              <label className="label" htmlFor="voice">AI Voice Persona</label>
+              <select
+                id="voice"
+                value={voice}
+                onChange={e => setVoice(e.target.value as any)}
+              >
+                <option value="Aoede">Aoede (Confident & Professional)</option>
+                <option value="Charon">Charon (Deep & Calm)</option>
+                <option value="Fenrir">Fenrir (Energetic & Strong)</option>
+                <option value="Kore">Kore (Warm & Friendly)</option>
+                <option value="Puck">Puck (Upbeat & Youthful)</option>
               </select>
             </div>
 

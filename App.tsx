@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 // Fix: Correctly import GoogleGenAI, remove Blob as it is not exported
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
-import { AppState, ProficiencyLevel, type Message, type Skill, type InterviewStatus, type InterviewRecord, type KPIs, type DeviceInfo, type InterviewerLanguage } from './types';
+import { AppState, ProficiencyLevel, type Message, type Skill, type InterviewStatus, type InterviewRecord, type KPIs, type DeviceInfo, type InterviewerLanguage, type Voice } from './types';
 import { getInitialSystemPrompt, getFeedbackPrompt } from './constants';
 import SetupScreen from './components/SetupScreen';
 import InterviewScreen from './components/InterviewScreen';
@@ -59,6 +59,7 @@ const AppContent: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.SETUP);
   const [topic, setTopic] = useState<string>('');
   const [language, setLanguage] = useState<InterviewerLanguage>('English');
+  const [voice, setVoice] = useState<Voice>('Aoede');
   const [userName, setUserName] = useState<string>('');
   const [yearsOfExperience, setYearsOfExperience] = useState<number | ''>('');
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -230,7 +231,6 @@ const AppContent: React.FC = () => {
       nextAudioStartTimeRef.current = 0;
       setInterviewStatus('LISTENING');
     }
-    setAppState(AppState.SETUP);
   }, []);
 
   const handleResumeDraft = () => {
@@ -286,7 +286,7 @@ const AppContent: React.FC = () => {
         }
 
         const feedbackPrompt = getFeedbackPrompt(topic, joinedTranscript);
-        const response = await ai.models.generateContent({model: 'gemini-2.0-flash', contents: feedbackPrompt});
+        const response = await ai.models.generateContent({model: 'gemini-2.5-flash', contents: feedbackPrompt});
         const feedbackText = response.text;
         setFeedback(feedbackText);
 
@@ -462,7 +462,7 @@ const AppContent: React.FC = () => {
         config: {
           systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, language, interviewDetails, resumeText, jdText) }] },
           responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } }
         },
         callbacks: {
           onopen: () => {
@@ -688,9 +688,9 @@ const AppContent: React.FC = () => {
 
         // Barge-in logic: if Sanai is speaking and the user speaks loudly, interrupt
         // We use a small counter to ensure it's a sustained sound rather than a spike
-        if (interviewStatus === 'SPEAKING' && db > noiseThresholdRef.current + 12) {
+        if (interviewStatus === 'SPEAKING' && db > noiseThresholdRef.current + 20) {
             bargeInCounterRef.current++;
-            if (bargeInCounterRef.current > 3) { // ~3 chunks = ~40-60ms of sustained speech
+            if (bargeInCounterRef.current > 2) { // ~2 chunks = ~500ms of sustained speech
                 console.log("DEBUG: Barge-in detected (Voice).");
                 interruptAi();
                 bargeInCounterRef.current = 0;
@@ -738,10 +738,12 @@ const AppContent: React.FC = () => {
         msg = "Network connection failed. Please check your internet or firewall.";
       }
       
-      setError(`Session Initialization Failed: ${msg}`);
+      setError(`Session Failed: ${msg}`);
       setIsLoading(false);
-      setAppState(AppState.SETUP);
       setNetworkQuality('CRITICAL');
+      if (!isReconnect) {
+        setAppState(AppState.SETUP);
+      }
     }
   }, [userName, topic, yearsOfExperience, skills, language, interviewDetails, audioInputId, audioOutputId, micGain, cleanupAudio, isEndingInterview, appState, cancelInterview, interviewStatus, interruptAi]);
 
@@ -803,7 +805,7 @@ const AppContent: React.FC = () => {
       const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("API Key missing");
       const genAI = new GoogleGenAI(apiKey);
-      const model = (genAI as any).getGenerativeModel({ model: "gemini-2.0-flash-lite-preview-02-05" });
+      const model = (genAI as any).getGenerativeModel({ model: "gemini-2.5-flash-lite" });
       
       const prompt = `Condense the following ${type === 'resume' ? 'professional resume' : 'job description'} into a highly structured, punchy, and information-dense summary (max 300 words). Focus on key skills, achievements, and technical requirements. Retain all "must-have" keywords.\n\nTEXT:\n${text}`;
       
@@ -860,6 +862,8 @@ const AppContent: React.FC = () => {
             setTopic={setTopic}
             language={language}
             setLanguage={setLanguage}
+            voice={voice}
+            setVoice={setVoice}
             onResumeDraft={handleResumeDraft}
             hasDraft={!!localStorage.getItem('sanai-interview-draft')}
             onCondense={handleCondenseContext}

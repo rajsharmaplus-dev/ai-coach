@@ -53,3 +53,4 @@ export interface DeviceInfo {
 }
 
 export type InterviewerLanguage = 'English' | 'Hindi' | 'Hinglish';
+export type Voice = 'Aoede' | 'Charon' | 'Fenrir' | 'Kore' | 'Puck';
