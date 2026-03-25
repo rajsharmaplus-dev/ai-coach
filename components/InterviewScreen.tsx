@@ -137,7 +137,7 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
       <main className="i-main">
         {/* AI Presence Stage */}
         <div className="i-avatar-col">
-          <div className="i-avatar-stage">
+          <div className="i-avatar-stage glass-panel">
             <div className={`i-ai-presence ${interviewStatus}`}>
               <div className="i-ai-glow" />
               <div className="i-ai-core">
@@ -240,13 +240,12 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: var(--sp-3) var(--sp-5);
-          border-bottom: 1px solid var(--border-subtle);
+          padding: var(--sp-3) var(--sp-6);
           background: var(--header-bg);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          box-shadow: 0 1px 0 0 var(--header-accent), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+          box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
           flex-shrink: 0;
           gap: var(--sp-4);
           z-index: 10;
@@ -380,6 +379,9 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           grid-template-columns: 1fr 1fr;
           overflow: hidden;
           min-height: 0;
+          max-width: 1400px;
+          margin: 0 auto;
+          width: 100%;
         }
 
         @media (max-width: 860px) {
@@ -407,9 +409,7 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           max-height: 60vh;
           border-radius: var(--radius-xl);
           overflow: hidden;
-          border: 1px solid var(--border-subtle);
-          box-shadow: var(--shadow-lg), 0 0 60px rgba(139,92,246,0.1);
-          background: var(--bg-deep);
+          box-shadow: var(--shadow-lg), 0 0 60px rgba(139,92,246,0.15);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -585,19 +585,29 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
         /* ── Footer ── */
         .i-footer {
           flex-shrink: 0;
-          background: rgba(10,10,20,0.9);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          border-top: 1px solid var(--border-subtle);
-          padding: var(--sp-3) var(--sp-5);
+          background: var(--header-bg);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
+          padding: var(--sp-4) var(--sp-6);
+          position: relative;
+        }
+        
+        .i-footer::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, var(--purple-500), transparent);
+          opacity: 0.3;
         }
 
         .i-dock {
-          max-width: 960px;
+          max-width: 1000px;
           margin: 0 auto;
           display: flex;
           align-items: center;
-          gap: var(--sp-3);
+          gap: var(--sp-4);
         }
 
         /* User Preview */

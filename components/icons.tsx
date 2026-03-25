@@ -138,3 +138,28 @@ export const PlayCircleIcon: React.FC<IconProps> = (props) => (
     <polygon points="10 8 16 12 10 16 10 8" />
   </svg>
 );
+
+export const FileTextIcon: React.FC<IconProps> = (props) => (
+  <svg {...iconProps(props)}>
+    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+    <line x1="10" y1="9" x2="8" y2="9" />
+  </svg>
+);
+
+export const UploadIcon: React.FC<IconProps> = (props) => (
+  <svg {...iconProps(props)}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
+export const LinkIcon: React.FC<IconProps> = (props) => (
+  <svg {...iconProps(props)}>
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);

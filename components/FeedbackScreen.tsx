@@ -109,7 +109,7 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
         <div className="f-main-col">
 
           {/* Session Overview Card */}
-          <div className="f-overview-card glass-rich animate-fade-slide">
+          <div className="f-overview-card glass-panel animate-fade-slide">
             <div className="f-overview-top">
               <div>
                 <span className="badge badge-purple">Completed</span>
@@ -133,7 +133,7 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
 
           {/* Video Replay */}
           {recordingUrl && (
-            <div className="f-video-card glass-rich animate-fade-slide" style={{ animationDelay: '0.1s' }}>
+            <div className="f-video-card glass-panel animate-fade-slide" style={{ animationDelay: '0.1s' }}>
               <div className="f-section-label">
                 <PlayCircleIcon size={16} />
                 <span>Session Replay</span>
@@ -145,7 +145,7 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
            {/* AI Insights */}
           <div className="f-insights">
             {error ? (
-              <div className="f-insight-card glass-rich f-error-card animate-fade-slide">
+              <div className="f-insight-card glass-panel f-error-card animate-fade-slide">
                 <h3 className="f-insight-title" style={{ color: '#fca5a5' }}>Analysis Interrupted</h3>
                 <div className="f-insight-body">
                   <p>{error}</p>
@@ -156,13 +156,13 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
               </div>
             ) : parsedSections.length > 0 ? (
               parsedSections.map(({ title, body }, i) => (
-                <div key={i} className="f-insight-card glass-rich animate-fade-slide" style={{ animationDelay: `${i * 0.08}s` }}>
+                <div key={i} className="f-insight-card glass-panel animate-fade-slide" style={{ animationDelay: `${i * 0.08}s` }}>
                   <h3 className="f-insight-title">{title}</h3>
                   <div className="f-insight-body">{body}</div>
                 </div>
               ))
             ) : (
-              <div className="f-insight-card glass-rich">
+              <div className="f-insight-card glass-panel">
                 <div className="f-insight-body">{feedback || 'Feedback is being generated...'}</div>
               </div>
             )}
@@ -171,8 +171,8 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
 
         {/* ── Right Column — Transcript ── */}
         <aside className="f-sidebar">
-          <div className="f-transcript-card glass-rich">
-            <div className="f-section-label" style={{ padding: 'var(--sp-5) var(--sp-5) 0' }}>
+          <div className="f-transcript-card glass-panel">
+            <div className="f-section-label" style={{ padding: 'var(--sp-6) var(--sp-6) 0' }}>
               <span>Interaction Log</span>
               <span className="badge badge-purple">{messages.length}</span>
             </div>
@@ -217,15 +217,16 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: var(--sp-4) var(--sp-6);
-          border-bottom: 1px solid var(--border-subtle);
-          background: rgba(10,10,20,0.75);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+          padding: var(--sp-3) var(--sp-6);
+          background: var(--header-bg);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
           position: sticky;
           top: 0;
           z-index: 10;
           flex-shrink: 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
         }
 
         /* ── Body ── */
@@ -235,7 +236,7 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
           display: grid;
           grid-template-columns: 1fr 340px;
           gap: var(--sp-6);
-          max-width: 1280px;
+          max-width: 1400px;
           width: 100%;
           margin: 0 auto;
           padding: var(--sp-8) var(--sp-6) var(--sp-16);
@@ -497,14 +498,22 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
           justify-content: flex-end;
           gap: var(--sp-3);
           padding: var(--sp-4) var(--sp-6);
-          border-top: 1px solid var(--border-subtle);
-          background: rgba(10,10,20,0.85);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+          background: var(--header-bg);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
           position: sticky;
           bottom: 0;
           flex-shrink: 0;
           z-index: 10;
+        }
+
+        .f-footer::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, var(--purple-500), transparent);
+          opacity: 0.3;
         }
 
         @media (max-width: 480px) {

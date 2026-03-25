@@ -1,5 +1,10 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { BrainCircuitIcon, SettingsIcon, MicrophoneIcon, SpeakerIcon, SunIcon, MoonIcon } from './icons';
+import { BrainCircuitIcon, SettingsIcon, MicrophoneIcon, SpeakerIcon, SunIcon, MoonIcon, UploadIcon, FileTextIcon, LinkIcon } from './icons';
+import * as mammoth from 'mammoth';
+import * as pdfjs from 'pdfjs-dist';
+
+// Set PDF.js worker from CDN for easier setup in various environments
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 import type { InterviewRecord, Skill, InterviewerLanguage, Voice } from '../types';
 import { ProficiencyLevel as ProficiencyLevelEnum } from '../types';
 
@@ -62,6 +67,11 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
   const [isPreviewActive, setIsPreviewActive] = useState(false);
   const tempStreamRef = useRef<MediaStream | null>(null);
   const previewAudioCtxRef = useRef<AudioContext | null>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+  const jdInputRef = useRef<HTMLInputElement>(null);
+  const [isExtracting, setIsExtracting] = useState<'resume' | 'jd' | null>(null);
+  const [showUrlInput, setShowUrlInput] = useState<'resume' | 'jd' | null>(null);
+  const [urlValue, setUrlValue] = useState('');
 
   const refreshDevices = useCallback(async () => {
     try {
@@ -161,6 +171,104 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
     }
   };
 
+  const extractTextFromFile = async (file: File): Promise<string> => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+
+    if (extension === 'txt') {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string || '');
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+    }
+
+    if (extension === 'docx') {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return result.value;
+    }
+
+    if (extension === 'pdf') {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+      return fullText;
+    }
+
+    throw new Error('Unsupported file format. Please upload PDF, DOCX, or TXT.');
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'resume' | 'jd') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsExtracting(type);
+    try {
+      const text = await extractTextFromFile(file);
+      if (type === 'resume') setResumeText(text);
+      else setJdText(text);
+    } catch (err: any) {
+      console.error('File extraction failed:', err);
+      alert(err.message || 'Failed to extract text from file.');
+    } finally {
+      setIsExtracting(null);
+      // Reset input so the same file can be uploaded again if needed
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleUrlFetch = async (type: 'resume' | 'jd') => {
+    if (!urlValue.trim()) return;
+
+    let targetUrl = urlValue.trim();
+    setIsExtracting(type);
+
+    try {
+      // 1. Handle Google Drive/Docs Links
+      if (targetUrl.includes('docs.google.com/document/d/')) {
+        const docId = targetUrl.match(/\/d\/([^/]+)/)?.[1];
+        if (docId) targetUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+      } else if (targetUrl.includes('drive.google.com/file/d/')) {
+        const fileId = targetUrl.match(/\/d\/([^/]+)/)?.[1];
+        if (fileId) targetUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
+      }
+
+      // 2. Fetch Content (Using a CORS proxy for browser environments)
+      // Note: In production, you'd use your own proxy. Heroku one is for demo/dev.
+      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+      const response = await fetch(proxyUrl + targetUrl);
+      
+      if (!response.ok) {
+        if (response.status === 403) throw new Error("CORS Proxy rate limited or Access Denied. Please ensure the link is public.");
+        throw new Error(`Failed to fetch: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type')?.toLowerCase() || '';
+      const blob = await response.blob();
+      const file = new File([blob], "fetched_file", { type: contentType });
+
+      // 3. Reuse extraction logic
+      const text = await extractTextFromFile(file);
+      if (type === 'resume') setResumeText(text);
+      else setJdText(text);
+
+      setShowUrlInput(null);
+      setUrlValue('');
+    } catch (err: any) {
+      console.error('URL fetch failed:', err);
+      alert(err.message || 'Failed to fetch content from URL. Ensure the link is publicly accessible.');
+    } finally {
+      setIsExtracting(null);
+    }
+  };
+
   const canStart = !isLoading && userName.trim() && topic.trim() && yearsOfExperience !== '';
 
   return (
@@ -182,13 +290,14 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
       </header>
 
       {/* ── Body ───────────────────────────────── */}
-      <main className="s-body">
-        {/* Left — Form */}
-        <section className="s-form-panel glass-rich animate-fade-slide">
-          <div className="s-panel-header">
-            <h2 className="s-panel-title">Start Your Session</h2>
-            <p className="s-panel-subtitle">Configure your interview and let Sanai tailor a precision coaching experience.</p>
-          </div>
+      <main className="main-layout px-mobile-4" style={{ marginTop: 'var(--sp-6)' }}>
+        <div className="sidebar-layout">
+          {/* Left — Form */}
+          <section className="main-content glass-panel" style={{ padding: 'var(--sp-6)' }}>
+            <div className="s-panel-header" style={{ marginBottom: 'var(--sp-8)' }}>
+              <h2 className="s-panel-title">Start Your Session</h2>
+              <p className="s-panel-subtitle">Configure your interview and let Sanai tailor a precision coaching experience.</p>
+            </div>
 
           <div className="s-form-grid">
             {/* Top Row: Name, Role, Exp */}
@@ -307,7 +416,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             </button>
 
             {showDeepContext && (
-              <div className="s-advanced-panel animate-fade-slide" style={{ marginTop: 'var(--sp-4)', padding: 'var(--sp-4)' }}>
+              <div className="s-advanced-panel glass-panel animate-fade-slide" style={{ marginTop: 'var(--sp-4)', padding: 'var(--sp-4)' }}>
                  <div className="s-field">
                   <div className="s-label-row">
                     <label className="label">Full Resume Text</label>
@@ -321,6 +430,54 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                     placeholder="Paste your professional experience here..."
                     rows={4}
                   />
+                  <div style={{ marginTop: 'var(--sp-2)', display: 'flex', gap: 'var(--sp-2)' }}>
+                    <input
+                      type="file"
+                      ref={resumeInputRef}
+                      onChange={(e) => handleFileUpload(e, 'resume')}
+                      accept=".pdf,.docx,.txt"
+                      style={{ display: 'none' }}
+                      id="resume-upload"
+                    />
+                    <button 
+                      className="btn-outline text-xs" 
+                      onClick={() => resumeInputRef.current?.click()}
+                      disabled={isExtracting === 'resume'}
+                      type="button"
+                      style={{ padding: 'var(--sp-1) var(--sp-3)', height: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}
+                    >
+                      {isExtracting === 'resume' ? <div className="s-spinner" style={{ width: '12px', height: '12px' }} /> : <UploadIcon size={14} />}
+                      <span>{isExtracting === 'resume' ? 'Extracting...' : 'Upload CV'}</span>
+                    </button>
+                    <button 
+                      className="btn-outline text-xs" 
+                      onClick={() => setShowUrlInput(showUrlInput === 'resume' ? null : 'resume')}
+                      type="button"
+                      style={{ padding: 'var(--sp-1) var(--sp-3)', height: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}
+                    >
+                      <LinkIcon size={14} />
+                      <span>{showUrlInput === 'resume' ? 'Cancel' : 'Paste Link'}</span>
+                    </button>
+                  </div>
+                  {showUrlInput === 'resume' && (
+                    <div style={{ marginTop: 'var(--sp-2)', display: 'flex', gap: 'var(--sp-2)' }} className="animate-fade-in">
+                      <input 
+                        type="url" 
+                        placeholder="Paste Google Drive/Doc link or URL..." 
+                        value={urlValue}
+                        onChange={(e) => setUrlValue(e.target.value)}
+                        style={{ fontSize: 'var(--text-xs)', height: '2rem' }}
+                      />
+                      <button 
+                        className="btn-primary" 
+                        onClick={() => handleUrlFetch('resume')}
+                        disabled={isExtracting === 'resume'}
+                        style={{ padding: '0 var(--sp-3)', height: '2rem', fontSize: 'var(--text-xs)' }}
+                      >
+                        {isExtracting === 'resume' ? 'Fetching...' : 'Fetch'}
+                      </button>
+                    </div>
+                  )}
                 </div>
                  <div className="s-field" style={{ marginTop: 'var(--sp-4)' }}>
                   <div className="s-label-row">
@@ -335,6 +492,54 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                     placeholder="Paste the requirements or company context..."
                     rows={4}
                   />
+                  <div style={{ marginTop: 'var(--sp-2)', display: 'flex', gap: 'var(--sp-2)' }}>
+                    <input
+                      type="file"
+                      ref={jdInputRef}
+                      onChange={(e) => handleFileUpload(e, 'jd')}
+                      accept=".pdf,.docx,.txt"
+                      style={{ display: 'none' }}
+                      id="jd-upload"
+                    />
+                    <button 
+                      className="btn-outline text-xs" 
+                      onClick={() => jdInputRef.current?.click()}
+                      disabled={isExtracting === 'jd'}
+                      type="button"
+                      style={{ padding: 'var(--sp-1) var(--sp-3)', height: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}
+                    >
+                      {isExtracting === 'jd' ? <div className="s-spinner" style={{ width: '12px', height: '12px' }} /> : <UploadIcon size={14} />}
+                      <span>{isExtracting === 'jd' ? 'Extracting...' : 'Upload JD'}</span>
+                    </button>
+                    <button 
+                      className="btn-outline text-xs" 
+                      onClick={() => setShowUrlInput(showUrlInput === 'jd' ? null : 'jd')}
+                      type="button"
+                      style={{ padding: 'var(--sp-1) var(--sp-3)', height: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}
+                    >
+                      <LinkIcon size={14} />
+                      <span>{showUrlInput === 'jd' ? 'Cancel' : 'Paste Link'}</span>
+                    </button>
+                  </div>
+                  {showUrlInput === 'jd' && (
+                    <div style={{ marginTop: 'var(--sp-2)', display: 'flex', gap: 'var(--sp-2)' }} className="animate-fade-in">
+                      <input 
+                        type="url" 
+                        placeholder="Paste Google Drive/Doc link or URL..." 
+                        value={urlValue}
+                        onChange={(e) => setUrlValue(e.target.value)}
+                        style={{ fontSize: 'var(--text-xs)', height: '2rem' }}
+                      />
+                      <button 
+                        className="btn-primary" 
+                        onClick={() => handleUrlFetch('jd')}
+                        disabled={isExtracting === 'jd'}
+                        style={{ padding: '0 var(--sp-3)', height: '2rem', fontSize: 'var(--text-xs)' }}
+                      >
+                        {isExtracting === 'jd' ? 'Fetching...' : 'Fetch'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -355,7 +560,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             </button>
 
             {showAdvanced && (
-              <div className="s-advanced-panel animate-fade-slide">
+              <div className="s-advanced-panel glass-panel animate-fade-slide">
                 <div className="s-settings-grid">
                   <div className="s-field">
                     <label className="label"><MicrophoneIcon size={13} /> Audio Input</label>
@@ -438,20 +643,20 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
             </div>
           )}
 
-           {/* CTA */}
-          <div className="s-cta-row">
-            <button
-              className="btn-primary s-start-btn pulse-primary"
-              onClick={onStart}
-              disabled={!canStart}
-              data-testid="start-interview-button"
-            >
-              {isLoading ? (
-                <><div className="s-spinner" /><span>Initializing...</span></>
-              ) : (
-                <><BrainCircuitIcon size={20} /><span>Initiate Interview</span></>
-              )}
-            </button>
+            {/* CTA */}
+            <div className="s-cta-row" style={{ marginTop: 'var(--sp-8)' }}>
+              <button
+                className="btn-primary w-full-mobile s-start-btn pulse-primary"
+                onClick={onStart}
+                disabled={!canStart}
+                data-testid="start-interview-button"
+              >
+                {isLoading ? (
+                  <><div className="s-spinner" /><span>Initializing...</span></>
+                ) : (
+                  <><BrainCircuitIcon size={20} /><span>Initiate Interview</span></>
+                )}
+              </button>
             
             {hasDraft && (
               <button 
@@ -462,16 +667,16 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                 Resume Last Session
               </button>
             )}
-          </div>
-        </section>
-
-        {/* Right — History */}
-        {pastInterviews.length > 0 && (
-          <aside className="s-history-panel animate-fade-slide" style={{ animationDelay: '0.1s' }}>
-            <div className="s-history-header">
-              <h3 className="s-panel-title" style={{ fontSize: 'var(--text-lg)' }}>Session History</h3>
-              <span className="badge badge-purple">{pastInterviews.length}</span>
             </div>
+          </section>
+
+          {/* Right — History Sidebar */}
+          {pastInterviews.length > 0 && (
+            <aside className="sidebar-pane hide-on-mobile glass-panel" style={{ padding: '0', display: 'flex', flexDirection: 'column', height: 'fit-content', maxHeight: 'calc(100vh - 120px)' }}>
+              <div className="s-history-header" style={{ padding: 'var(--sp-5) var(--sp-6)' }}>
+                <h3 className="s-panel-title" style={{ fontSize: 'var(--text-lg)' }}>Session History</h3>
+                <span className="badge badge-purple">{pastInterviews.length}</span>
+              </div>
             <div className="s-history-list custom-scrollbar">
               {pastInterviews.slice(0, 8).map((record, i) => (
                 <button
@@ -491,10 +696,11 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                     </div>
                   )}
                 </button>
-              ))}
-            </div>
-          </aside>
-        )}
+                ))}
+              </div>
+            </aside>
+          )}
+        </div>
       </main>
 
       <style>{`
@@ -511,49 +717,15 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: var(--sp-2) var(--sp-6);
-          border-bottom: 1px solid var(--border-subtle);
+          padding: var(--sp-3) var(--sp-6);
           position: sticky;
           top: 0;
-          z-index: 10;
+          z-index: 50;
           background: var(--header-bg);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          box-shadow: 0 1px 0 0 var(--header-accent), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-        }
-
-        /* ── Body ── */
-        .s-body {
-          max-width: 1120px;
-          width: 100%;
-          margin: var(--sp-4) auto 0;
-          padding: 0 var(--sp-6);
-          display: grid;
-          grid-template-columns: 1fr 320px;
-          gap: var(--sp-6);
-          align-items: start;
-        }
-
-        @media (max-width: 900px) {
-          .s-body {
-            grid-template-columns: 1fr;
-            padding: 0 var(--sp-4);
-            margin-top: var(--sp-6);
-          }
-          .s-history-panel { order: 1; } /* History below form on mobile */
-        }
-
-        /* ── Form Panel ── */
-        .s-form-panel {
-          padding: var(--sp-5) var(--sp-6);
-          display: flex;
-          flex-direction: column;
-          gap: var(--sp-4);
-        }
-
-        @media (max-width: 600px) {
-          .s-form-panel { padding: var(--sp-5); gap: var(--sp-6); }
+          box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
         }
 
         .s-panel-header { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -569,10 +741,10 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
          .s-form-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: var(--sp-4);
+          gap: var(--sp-5);
         }
-        @media (max-width: 600px) {
-          .s-form-grid { grid-template-columns: 1fr; }
+        @media (max-width: 767px) {
+          .s-form-grid { grid-template-columns: 1fr; gap: var(--sp-4); }
         }
 
         .s-field { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -581,12 +753,13 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         .s-field--checkbox { grid-column: 1 / -1; }
 
         /* ── Skills ── */
-        .s-skill-row { display: flex; gap: var(--sp-2); }
-        .s-skill-row input { flex: 1; }
+        .s-skill-row { display: flex; gap: var(--sp-2); height: 44px; }
+        .s-skill-row input { flex: 1; height: 100%; border-radius: var(--radius-md); }
         .s-add-btn {
-          padding: var(--sp-2) var(--sp-5);
+          padding: 0 var(--sp-5);
           flex-shrink: 0;
           height: 100%;
+          border-radius: var(--radius-md);
         }
 
         .s-chips {
@@ -657,9 +830,6 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         .s-advanced-panel {
           margin-top: var(--sp-5);
           padding: var(--sp-5);
-          background: rgba(255,255,255,0.02);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
         }
 
         .s-settings-grid {

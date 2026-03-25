@@ -486,7 +486,7 @@ const AppContent: React.FC = () => {
                 try {
                   setTimeout(() => {
                     if (isSessionReadyRef.current && sessionRef.current) {
-                      console.log("DEBUG: Sending initial prompt after 3000ms stability delay...");
+                      console.log("DEBUG: Sending initial prompt after 1000ms stability delay...");
                       sessionRef.current.sendClientContent({
                         turns: [{ 
                           role: 'user', 
@@ -494,17 +494,33 @@ const AppContent: React.FC = () => {
                         }],
                         turnComplete: true
                       });
-                      // Only allow audio AFTER the first greeting is dispatched
+                      // Faster audio gate activation
                       setTimeout(() => { 
                          isAudioActiveRef.current = true;
                          console.log("DEBUG: User Mic Stream Activated.");
-                      }, 1500);
+                      }, 500);
                     }
-                  }, 3000);
+                  }, 1000);
                 } catch (err) {
                   console.error("DEBUG: Failed to send initial prompt:", err);
                 }
               } else {
+                // --- CONTEXT CATCH-UP ON RECONNECT ---
+                if (messages.length > 0) {
+                  console.log(`DEBUG: Reconnected. Sending ${messages.length} messages as catch-up context.`);
+                  try {
+                    const historyText = messages.map(m => `${m.sender}: ${m.text}`).join('\n');
+                    sessionRef.current?.sendClientContent({
+                      turns: [{ 
+                        role: 'user', 
+                        parts: [{ text: `CONVERSATION SO FAR:\n${historyText}\n\nPlease CONTINUE the interview naturally from where we left off. Do not repeat previous questions.` }] 
+                      }],
+                      turnComplete: true
+                    });
+                  } catch (err) {
+                    console.error("DEBUG: Failed to send catch-up context:", err);
+                  }
+                }
                 isAudioActiveRef.current = true; // Reconnects start audio immediately
               }
               setIsLoading(false);
@@ -688,9 +704,9 @@ const AppContent: React.FC = () => {
 
         // Barge-in logic: if Sanai is speaking and the user speaks loudly, interrupt
         // We use a small counter to ensure it's a sustained sound rather than a spike
-        if (interviewStatus === 'SPEAKING' && db > noiseThresholdRef.current + 20) {
+        if (interviewStatus === 'SPEAKING' && db > noiseThresholdRef.current + 15) {
             bargeInCounterRef.current++;
-            if (bargeInCounterRef.current > 2) { // ~2 chunks = ~500ms of sustained speech
+            if (bargeInCounterRef.current > 1) { // Faster response: ~1 chunk = ~250ms
                 console.log("DEBUG: Barge-in detected (Voice).");
                 interruptAi();
                 bargeInCounterRef.current = 0;
