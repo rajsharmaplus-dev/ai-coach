@@ -258,13 +258,28 @@ const AppContent: React.FC = () => {
   };
 
   const endInterviewAndGetFeedback = useCallback(async () => {
+    setError(null); // Clear any transient connection errors before generating final feedback
     sessionRef.current?.close();
     cleanupAudio();
     setIsLoading(true);
-    localStorage.removeItem('sanai-interview-draft'); // Clear draft on normal end
     setAppState(AppState.FEEDBACK);
 
-    const fullTranscriptMessages = [...messages];
+    // Flush any pending transcriptions that haven't been committed to the 'messages' array yet
+    const pendingIn = currentInputTranscriptionRef.current.trim();
+    const pendingOut = currentOutputTranscriptionRef.current.trim();
+    
+    let finalMessages = [...messages];
+    if (pendingIn) {
+      finalMessages.push({ sender: userName, text: pendingIn });
+      currentInputTranscriptionRef.current = '';
+    }
+    if (pendingOut) {
+      finalMessages.push({ sender: 'Sanai', text: pendingOut });
+      currentOutputTranscriptionRef.current = '';
+    }
+    
+    setMessages(finalMessages);
+    const fullTranscriptMessages = finalMessages;
 
     try {
         if (!(import.meta as any).env.VITE_GEMINI_API_KEY) throw new Error("API_KEY not set.");
@@ -286,6 +301,20 @@ const AppContent: React.FC = () => {
         }
 
         const feedbackPrompt = getFeedbackPrompt(topic, joinedTranscript);
+        
+        // Guard: If transcript is empty or negligible, don't waste API tokens and show a friendly message
+        if (fullTranscriptMessages.length < 2 || joinedTranscript.length < 20) {
+          setFeedback(`## 📝 Session Too Brief
+          
+          It looks like this session was ended before a meaningful conversation could take place. 
+          
+          Please ensure you've had at least one or two exchanges with Sanai to generate a detailed Performance Report. 
+          
+          Click **Start New Session** to try again!`);
+          setCurrentMetrics({ confidence: 0, clarity: 0, technical: 0, pacing: 0 });
+          return;
+        }
+
         const response = await ai.models.generateContent({model: 'gemini-2.5-flash', contents: feedbackPrompt});
         const feedbackText = response.text;
         setFeedback(feedbackText);
