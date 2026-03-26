@@ -47,19 +47,138 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
 
   const handleDownloadPdf = () => {
     const doc = new jsPDF();
-    doc.setFontSize(22);
-    doc.setTextColor(110, 60, 255);
-    doc.text(`Sanai Performance Report`, 20, 20);
-    doc.setFontSize(12);
-    doc.setTextColor(50, 50, 50);
-    doc.text(`Session: ${topic}`, 20, 34);
-    doc.text(`Candidate: ${userName}`, 20, 42);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 50);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    const contentWidth = pageWidth - (margin * 2);
+    let y = margin;
+
+    const checkPageBreak = (needed: number) => {
+      if (y + needed > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+        return true;
+      }
+      return false;
+    };
+
+    const drawHeader = () => {
+      // Background Accent
+      doc.setFillColor(248, 250, 252); // slate-50
+      doc.rect(0, 0, pageWidth, 45, 'F');
+      
+      // Brand
+      doc.setTextColor(110, 60, 255); // purple-600
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(24);
+      doc.text('SANAI', margin, 25);
+      
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text('INTELLIGENCE DOSSIER', margin, 32);
+      
+      // Session Info (Right aligned)
+      doc.setFontSize(9);
+      doc.text(`DATE: ${new Date().toLocaleDateString('en-US', { dateStyle: 'long' })}`, pageWidth - margin, 20, { align: 'right' });
+      doc.text(`SESSION ID: ${Math.random().toString(36).substring(7).toUpperCase()}`, pageWidth - margin, 25, { align: 'right' });
+      
+      y = 55;
+    };
+
+    drawHeader();
+
+    // ── OVERVIEW SECTION ──
+    doc.setTextColor(15, 23, 42); // slate-900
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(topic, margin, y);
+    y += 8;
+    
     doc.setFontSize(11);
-    doc.text('AI Analysis:', 20, 64);
-    const lines = doc.splitTextToSize(feedback, 170);
-    doc.text(lines, 20, 72);
-    doc.save(`Sanai_${topic.replace(/\s+/g, '_')}_${userName}.pdf`);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(`CANDIDATE: ${userName}`, margin, y);
+    y += 15;
+
+    // ── SCORE BOX ──
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(margin, y, contentWidth, 35, 3, 3, 'FD');
+    
+    // Overall Score
+    doc.setTextColor(110, 60, 255);
+    doc.setFontSize(28);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${overallScore}`, margin + 15, y + 22);
+    doc.setFontSize(10);
+    doc.setTextColor(148, 163, 184); // slate-400
+    doc.text('/ 100', margin + 15, y + 28);
+    doc.text('OVERALL READINESS', margin + 35, y + 22);
+
+    // KPI Mini-Grid in box
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    const kpiX = margin + 100;
+    doc.text(`CONFIDENCE: ${kpis.confidence}%`, kpiX, y + 12);
+    doc.text(`CLARITY: ${kpis.clarity}%`, kpiX, y + 22);
+    doc.text(`TECHNICAL: ${kpis.technical}%`, kpiX + 45, y + 12);
+    doc.text(`PACING: ${kpis.pacing}%`, kpiX + 45, y + 22);
+    
+    y += 50;
+
+    // ── ANALYSIS SECTIONS ──
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('AI PERFORMANCE ANALYSIS', margin, y);
+    doc.setDrawColor(110, 60, 255);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y + 2, margin + 30, y + 2);
+    y += 15;
+
+    parsedSections.forEach((section) => {
+      // Title
+      checkPageBreak(25);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(73, 56, 175); // Indigo
+      doc.text(section.title.toUpperCase(), margin, y);
+      y += 8;
+
+      // Body (Handle multi-line)
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85); // slate-700
+      
+      // Extract raw body text without React elements
+      const bodyText = typeof section.body === 'string' 
+        ? section.body 
+        : Array.isArray(section.body) 
+          ? section.body.map(b => (typeof b === 'string' ? b : (b as any).props.children)).join('')
+          : feedback.split('---')[parsedSections.indexOf(section) + 1]?.split('\n').slice(1).join('\n').trim();
+
+      const lines = doc.splitTextToSize(bodyText || '', contentWidth - 10);
+      
+      lines.forEach((line: string) => {
+        checkPageBreak(6);
+        doc.text(line, margin + 5, y);
+        y += 6;
+      });
+      
+      y += 10;
+    });
+
+    // ── FOOTER ON ALL PAGES ──
+    const totalPages = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`Page ${i} of ${totalPages} — Sanai Performance Analysis — Confidential`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+    }
+
+    doc.save(`Sanai_Dossier_${userName.replace(/\s+/g, '_')}.pdf`);
   };
 
   // Parse structured feedback from Gemini response separated by ---
