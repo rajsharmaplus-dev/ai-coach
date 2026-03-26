@@ -97,6 +97,7 @@ const AppContent: React.FC = () => {
   const sessionRef = useRef<LiveSession | null>(null);
   const isSessionReadyRef = useRef<boolean>(false);
   const isAudioActiveRef = useRef(false); // New: Gate audio until handshake is complete
+  const isExpectedCloseRef = useRef(false); 
 
   const cleanupAudio = useCallback(() => {
      console.log("Cleaning up audio resources...");
@@ -259,6 +260,7 @@ const AppContent: React.FC = () => {
 
   const endInterviewAndGetFeedback = useCallback(async () => {
     setError(null); // Clear any transient connection errors before generating final feedback
+    isExpectedCloseRef.current = true;
     sessionRef.current?.close();
     cleanupAudio();
     setIsLoading(true);
@@ -642,27 +644,32 @@ const AppContent: React.FC = () => {
             console.log(`DEBUG: Gemini WebSocket Closed. Code: ${e.code}, Reason: ${reason}`);
              isSessionReadyRef.current = false;
             
+            if (isExpectedCloseRef.current) {
+              console.log("DEBUG: Expected closure. Skipping error reporting.");
+              isExpectedCloseRef.current = false;
+            } else {
+              if (e.code !== 1000 && e.code !== 1001 && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+                const delay = Math.pow(2, reconnectAttemptsRef.current) * 2000;
+                console.log(`DEBUG: Unexpected close (${e.code}). Retrying in ${delay}ms... (Attempt ${reconnectAttemptsRef.current + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+                
+                setTimeout(() => {
+                  reconnectAttemptsRef.current++;
+                  setIsReconnecting(true);
+                  startInterview(true);
+                }, delay);
+              } else {
+                if (e.code === 1008 || e.code === 1000) {
+                   setError(`Connection closed by Gemini. Reason: ${reason}`);
+                }
+                setInterviewStatus('IDLE');
+                reconnectAttemptsRef.current = 0; // Reset if we give up or normal close
+                setNetworkQuality('CRITICAL'); // Mark critical on final close
+              }
+            }
+
             if (networkCheckIntervalRef.current) { // NEW: Clear network check interval on close
               clearInterval(networkCheckIntervalRef.current);
               networkCheckIntervalRef.current = null;
-            }
-
-            if (e.code !== 1000 && e.code !== 1001 && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-              const delay = Math.pow(2, reconnectAttemptsRef.current) * 2000;
-              console.log(`DEBUG: Unexpected close (${e.code}). Retrying in ${delay}ms... (Attempt ${reconnectAttemptsRef.current + 1}/${MAX_RECONNECT_ATTEMPTS})`);
-              
-              setTimeout(() => {
-                reconnectAttemptsRef.current++;
-                setIsReconnecting(true);
-                startInterview(true);
-              }, delay);
-            } else {
-              if (e.code === 1008 || e.code === 1000) {
-                 setError(`Connection closed by Gemini. Reason: ${reason}`);
-              }
-              setInterviewStatus('IDLE');
-              reconnectAttemptsRef.current = 0; // Reset if we give up or normal close
-              setNetworkQuality('CRITICAL'); // Mark critical on final close
             }
           }
         },
