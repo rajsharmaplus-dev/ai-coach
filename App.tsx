@@ -74,6 +74,7 @@ const AppContent: React.FC = () => {
   const [feedback, setFeedback] = useState<string>('');
   const [interviewStatus, setInterviewStatus] = useState<InterviewStatus>('IDLE');
   const [currentInputTranscription, setCurrentInputTranscription] = useState('');
+  const [currentOutputTranscription, setCurrentOutputTranscription] = useState('');
   const [pastInterviews, setPastInterviews] = useState<InterviewRecord[]>([]);
   const [isEndingInterview, setIsEndingInterview] = useState<boolean>(false);
   const [, setLastTurnTimestamp] = useState<number | null>(null);
@@ -622,8 +623,10 @@ PLEASE CONTINUE NATURALLY.` }]
               }
               
               if (sc.outputTranscription) {
-                console.log(`DEBUG: [AI Transcribing] "${sc.outputTranscription.text}"`);
-                currentOutputTranscriptionRef.current += sc.outputTranscription.text;
+                const text = sc.outputTranscription.text || (typeof sc.outputTranscription === 'string' ? sc.outputTranscription : '');
+                console.log(`DEBUG: [AI Transcribing] "${text}"`);
+                currentOutputTranscriptionRef.current += text;
+                setCurrentOutputTranscription(currentOutputTranscriptionRef.current);
               }
               
               if (sc.turnComplete) {
@@ -635,6 +638,7 @@ PLEASE CONTINUE NATURALLY.` }]
                 currentInputTranscriptionRef.current = '';
                 currentOutputTranscriptionRef.current = '';
                 setCurrentInputTranscription('');
+                setCurrentOutputTranscription('');
                 if (audioSourcesRef.current.size === 0) setInterviewStatus('LISTENING');
               }
             }
@@ -965,6 +969,7 @@ PLEASE CONTINUE NATURALLY.` }]
             isReconnecting={isReconnecting}
             interviewStatus={interviewStatus}
             currentInputTranscription={currentInputTranscription}
+            currentOutputTranscription={currentOutputTranscription}
             isEnding={isEndingInterview}
             userName={userName}
             interviewStartTime={interviewStartTime}

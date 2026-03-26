@@ -24,6 +24,7 @@ interface InterviewScreenProps {
   aiAudioChunk: Int16Array | null;
   onInterrupt: () => void;
   networkQuality: 'GOOD' | 'POOR' | 'CRITICAL';
+  currentOutputTranscription: string;
 }
 
 const STATUS_CONFIG: Record<InterviewStatus, { label: string; cls: string }> = {
@@ -35,7 +36,7 @@ const STATUS_CONFIG: Record<InterviewStatus, { label: string; cls: string }> = {
 
 const InterviewScreen: React.FC<InterviewScreenProps> = ({
   messages, onSendMessage, isLoading, onRequestEndInterview, onCancelInterview,
-  interviewStatus, currentInputTranscription, isEnding, userName,
+  interviewStatus, currentInputTranscription, currentOutputTranscription, isEnding, userName,
   interviewStartTime, connectionError, onReconnect, isReconnecting,
   localMediaStream, micLevel, theme, toggleTheme, aiAudioChunk, onInterrupt, networkQuality
 }) => {
@@ -52,7 +53,7 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, currentInputTranscription]);
+  }, [messages, currentInputTranscription, currentOutputTranscription]);
 
   useEffect(() => {
     if (videoRef.current && localMediaStream) videoRef.current.srcObject = localMediaStream;
@@ -166,14 +167,18 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
 
             {messages.map((msg, i) => (
               <div key={i} className={`i-msg ${msg.sender === 'Sanai' ? 'i-msg--ai' : 'i-msg--user'}`}>
-                <span className="i-msg-sender">{msg.sender}</span>
                 <div className="i-msg-bubble">{msg.text}</div>
               </div>
             ))}
 
+            {currentOutputTranscription && (
+              <div className="i-msg i-msg--ai i-msg--ghost">
+                <div className="i-msg-bubble">{currentOutputTranscription}<span className="i-cursor i-cursor--ai" /></div>
+              </div>
+            )}
+
             {currentInputTranscription && (
               <div className="i-msg i-msg--user i-msg--ghost">
-                <span className="i-msg-sender">{userName}</span>
                 <div className="i-msg-bubble">{currentInputTranscription}<span className="i-cursor" /></div>
               </div>
             )}
@@ -539,48 +544,73 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
         }
 
         /* Messages */
-        .i-msg { display: flex; flex-direction: column; gap: var(--sp-1); }
-
-        .i-msg-sender {
-          font-size: var(--text-xs);
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          padding: 0 var(--sp-1);
+        .i-msg { 
+          display: flex; 
+          flex-direction: column; 
+          gap: 2px;
+          width: 100%;
+          margin-bottom: var(--sp-2);
         }
-        .i-msg--ai   .i-msg-sender { color: var(--purple-500); }
-        .i-msg--user .i-msg-sender { color: var(--cyan-500); }
+        
+        .i-msg--ai { align-items: flex-start; }
+        .i-msg--user { align-items: flex-end; }
 
         .i-msg-bubble {
-          padding: var(--sp-3) var(--sp-4);
-          border-radius: var(--radius-md);
+          padding: 8px 12px;
           font-size: var(--text-md);
-          line-height: 1.65;
-          max-width: 90%;
+          line-height: 1.5;
+          max-width: 85%;
+          position: relative;
+          box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
         }
-        .i-msg--ai   .i-msg-bubble {
-          background: var(--purple-100);
-          border: 1px solid var(--purple-200);
-          color: var(--text-primary);
-          align-self: flex-start;
+
+        /* Bubble Tails */
+        .i-msg-bubble::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          width: 0;
+          height: 0;
+          border-top: 10px solid transparent;
+          border-bottom: 10px solid transparent;
         }
+
+        .i-msg--ai .i-msg-bubble {
+          background: ${theme === 'light' ? '#FFFFFF' : '#262D31'};
+          color: ${theme === 'light' ? '#000000' : '#E9EDEF'};
+          border-radius: 0 12px 12px 12px;
+        }
+        .i-msg--ai .i-msg-bubble::after {
+          left: -8px;
+          border-right: 12px solid ${theme === 'light' ? '#FFFFFF' : '#262D31'};
+        }
+
         .i-msg--user .i-msg-bubble {
-          background: rgba(56,189,248,0.07);
-          border: 1px solid rgba(56,189,248,0.15);
-          color: var(--text-primary);
-          align-self: flex-end;
+          background: ${theme === 'light' ? '#DCF8C6' : '#056162'};
+          color: ${theme === 'light' ? '#111b21' : '#E9EDEF'};
+          border-radius: 12px 0 12px 12px;
         }
-        .i-msg--ghost .i-msg-bubble { opacity: 0.7; }
+        .i-msg--user .i-msg-bubble::after {
+          right: -8px;
+          border-left: 12px solid ${theme === 'light' ? '#DCF8C6' : '#056162'};
+        }
+
+        .i-msg--ghost { opacity: 0.8; }
+        .i-msg--ghost .i-msg-bubble {
+          box-shadow: none;
+          border: 1px dashed rgba(255,255,255,0.1);
+          background: transparent;
+        }
 
         .i-cursor {
           display: inline-block;
           width: 2px; height: 1em;
-          background: var(--cyan-500);
+          background: var(--cyan-400);
           margin-left: 3px;
           vertical-align: text-bottom;
-          border-radius: 1px;
           animation: blink 1.2s step-start infinite;
         }
+        .i-cursor--ai { background: var(--purple-400); }
 
         /* ── Footer ── */
         .i-footer {

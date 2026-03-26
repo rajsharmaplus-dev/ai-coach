@@ -299,8 +299,7 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
               {messages.length > 0 ? (
                 messages.map((msg, i) => (
                   <div key={i} className={`f-msg ${msg.sender === 'Sanai' ? 'f-msg--ai' : 'f-msg--user'}`}>
-                    <span className="f-msg-sender">{msg.sender}</span>
-                    <p className="f-msg-text">{msg.text}</p>
+                    <div className="f-msg-bubble">{msg.text}</div>
                   </div>
                 ))
               ) : (
@@ -576,34 +575,56 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
           gap: var(--sp-4);
         }
 
-        .f-msg { display: flex; flex-direction: column; gap: var(--sp-1); }
-
-        .f-msg-sender {
-          font-size: var(--text-xs);
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
+        .f-msg { 
+          display: flex; 
+          flex-direction: column; 
+          gap: 2px;
+          width: 100%;
+          margin-bottom: var(--sp-2);
         }
+        
+        .f-msg--ai { align-items: flex-start; }
+        .f-msg--user { align-items: flex-end; }
 
-        .f-msg--ai .f-msg-sender { color: var(--purple-500); }
-        .f-msg--user .f-msg-sender { color: var(--cyan-500); }
-
-        .f-msg-text {
-          font-size: var(--text-sm);
-          color: var(--text-secondary);
-          line-height: 1.65;
-          padding: var(--sp-3) var(--sp-4);
+        .f-msg-bubble {
+          padding: 8px 12px;
           border-radius: var(--radius-md);
+          font-size: var(--text-sm);
+          line-height: 1.5;
+          max-width: 90%;
+          position: relative;
+          box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
         }
 
-        .f-msg--ai .f-msg-text {
-          background: var(--purple-100);
-          border: 1px solid var(--purple-200);
+        /* Bubble Tails */
+        .f-msg-bubble::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          width: 0;
+          height: 0;
+          border-top: 10px solid transparent;
+          border-bottom: 10px solid transparent;
         }
 
-        .f-msg--user .f-msg-text {
-          background: rgba(56,189,248,0.06);
-          border: 1px solid rgba(56,189,248,0.15);
+        .f-msg--ai .f-msg-bubble {
+          background: ${theme === 'light' ? '#FFFFFF' : '#262D31'};
+          color: ${theme === 'light' ? '#000000' : '#E9EDEF'};
+          border-radius: 0 12px 12px 12px;
+        }
+        .f-msg--ai .f-msg-bubble::after {
+          left: -8px;
+          border-right: 12px solid ${theme === 'light' ? '#FFFFFF' : '#262D31'};
+        }
+
+        .f-msg--user .f-msg-bubble {
+          background: ${theme === 'light' ? '#DCF8C6' : '#056162'};
+          color: ${theme === 'light' ? '#111b21' : '#E9EDEF'};
+          border-radius: 12px 0 12px 12px;
+        }
+        .f-msg--user .f-msg-bubble::after {
+          right: -8px;
+          border-left: 12px solid ${theme === 'light' ? '#DCF8C6' : '#056162'};
         }
 
         .f-error-card::before {
