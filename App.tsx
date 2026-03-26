@@ -305,7 +305,7 @@ const AppContent: React.FC = () => {
         const feedbackPrompt = getFeedbackPrompt(topic, joinedTranscript);
         
         // Guard: If transcript is empty or negligible, don't waste API tokens and show a friendly message
-        if (fullTranscriptMessages.length < 2 || joinedTranscript.length < 20) {
+        if (fullTranscriptMessages.length === 0 || joinedTranscript.trim().length < 10) {
           setFeedback(`## 📝 Session Too Brief
           
           It looks like this session was ended before a meaningful conversation could take place. 
@@ -544,7 +544,12 @@ const AppContent: React.FC = () => {
                     sessionRef.current?.sendClientContent({
                       turns: [{ 
                         role: 'user', 
-                        parts: [{ text: `CONVERSATION SO FAR:\n${historyText}\n\nPlease CONTINUE the interview naturally from where we left off. Do not repeat previous questions.` }] 
+                        parts: [{ text: `SYSTEM NOTIFICATION: The connection was briefly interrupted. Resume the interview by reacting to the last user message or asking your next intended question.
+
+CONVERSATION SO FAR:
+${historyText}
+
+PLEASE CONTINUE NATURALLY.` }] 
                       }],
                       turnComplete: true
                     });
