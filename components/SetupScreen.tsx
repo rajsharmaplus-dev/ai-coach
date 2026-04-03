@@ -47,8 +47,9 @@ interface SetupScreenProps {
   onResumeDraft: () => void;
   hasDraft: boolean;
   onCondense: (type: 'resume' | 'jd') => void;
+  selectedModel: string;
+  setSelectedModel: (model: string) => void;
 }
-
 const SetupScreen: React.FC<SetupScreenProps> = ({
   userName, setUserName, topic, setTopic, onStart, isLoading, error,
   pastInterviews, onViewInterview, yearsOfExperience, setYearsOfExperience,
@@ -57,11 +58,13 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
   micGain, setMicGain, noiseCancellation, setNoiseCancellation,
   noiseThreshold, setNoiseThreshold, theme, toggleTheme,
   resumeText, setResumeText, jdText, setJdText,
-  language, setLanguage, voice, setVoice, onResumeDraft, hasDraft, onCondense
+  language, setLanguage, voice, setVoice, onResumeDraft, hasDraft, onCondense,
+  selectedModel, setSelectedModel
 }) => {
   const [currentSkill, setCurrentSkill] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDeepContext, setShowDeepContext] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [previewMicLevel, setPreviewMicLevel] = useState(0);
   const [isPreviewActive, setIsPreviewActive] = useState(false);
@@ -287,7 +290,53 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
         <button onClick={toggleTheme} className="icon-btn" aria-label="Toggle theme">
           {theme === 'light' ? <MoonIcon size={18} /> : <SunIcon size={18} />}
         </button>
+        <button onClick={() => setShowSettings(true)} className="icon-btn" aria-label="Open settings" title="Settings">
+          <SettingsIcon size={18} />
+        </button>
       </header>
+
+      {/* ── Settings Panel Overlay ── */}
+      {showSettings && (
+        <div className="settings-overlay" onClick={() => setShowSettings(false)}>
+          <div className="settings-panel glass-panel" onClick={e => e.stopPropagation()}>
+            <div className="settings-panel-header">
+              <h3>Session Settings</h3>
+              <button className="icon-btn" onClick={() => setShowSettings(false)} aria-label="Close settings">✕</button>
+            </div>
+            <div className="settings-panel-body">
+              <div className="s-field" style={{ marginBottom: 'var(--sp-4)' }}>
+                <label className="label" htmlFor="sp-language">Interview Language</label>
+                <select id="sp-language" value={language} onChange={e => setLanguage(e.target.value as any)}>
+                  <option value="English">English</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Hinglish">Hinglish</option>
+                </select>
+              </div>
+              <div className="s-field" style={{ marginBottom: 'var(--sp-4)' }}>
+                <label className="label" htmlFor="sp-voice">AI Voice Persona</label>
+                <select id="sp-voice" value={voice} onChange={e => setVoice(e.target.value as any)}>
+                  <option value="Aoede">Aoede (Confident & Professional)</option>
+                  <option value="Charon">Charon (Deep & Calm)</option>
+                  <option value="Fenrir">Fenrir (Energetic & Strong)</option>
+                  <option value="Kore">Kore (Warm & Friendly)</option>
+                  <option value="Puck">Puck (Upbeat & Youthful)</option>
+                </select>
+              </div>
+              <div className="s-field">
+                <label className="label" htmlFor="sp-model">AI Intelligence Model</label>
+                <select id="sp-model" value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
+                  <option value="models/gemini-2.5-flash-native-audio-latest">Gemini 2.5 Flash (Production)</option>
+                  <option value="models/gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live (Experimental)</option>
+                </select>
+                <p className="s-hint" style={{ marginTop: '4px', opacity: 0.75 }}>3.1 → lower latency & better nuance detection</p>
+              </div>
+            </div>
+            <div className="settings-panel-footer">
+              <button className="btn-primary" style={{ width: '100%' }} onClick={() => setShowSettings(false)}>Apply & Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Body ───────────────────────────────── */}
       <main className="main-layout px-mobile-4" style={{ marginTop: 'var(--sp-6)' }}>
@@ -334,32 +383,6 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
                 onChange={e => setYearsOfExperience(e.target.value === '' ? '' : parseInt(e.target.value))}
                 placeholder="5"
               />
-            </div>
-            <div className="s-field">
-              <label className="label" htmlFor="language">Interview Language</label>
-              <select
-                id="language"
-                value={language}
-                onChange={e => setLanguage(e.target.value as any)}
-              >
-                <option value="English">English</option>
-                <option value="Hindi">Hindi</option>
-                <option value="Hinglish">Hinglish</option>
-              </select>
-            </div>
-            <div className="s-field">
-              <label className="label" htmlFor="voice">AI Voice Persona</label>
-              <select
-                id="voice"
-                value={voice}
-                onChange={e => setVoice(e.target.value as any)}
-              >
-                <option value="Aoede">Aoede (Confident & Professional)</option>
-                <option value="Charon">Charon (Deep & Calm)</option>
-                <option value="Fenrir">Fenrir (Energetic & Strong)</option>
-                <option value="Kore">Kore (Warm & Friendly)</option>
-                <option value="Puck">Puck (Upbeat & Youthful)</option>
-              </select>
             </div>
 
             {/* Skills */}
@@ -726,6 +749,44 @@ const SetupScreen: React.FC<SetupScreenProps> = ({
           -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
           box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        /* ── Settings Panel ── */
+        .settings-overlay {
+          position: fixed; inset: 0; z-index: 200;
+          background: rgba(0,0,0,0.45);
+          backdrop-filter: blur(4px);
+          display: flex; align-items: flex-start; justify-content: flex-end;
+          animation: fadeIn 0.15s ease;
+        }
+        .settings-panel {
+          width: 360px; max-width: 100vw;
+          height: 100dvh;
+          display: flex; flex-direction: column;
+          padding: 0;
+          animation: slideInRight 0.2s cubic-bezier(0.34,1.56,0.64,1);
+          border-radius: 0 !important;
+          border-left: 1px solid var(--border-color);
+        }
+        .settings-panel-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: var(--sp-5) var(--sp-6);
+          border-bottom: 1px solid var(--border-color);
+        }
+        .settings-panel-header h3 {
+          font-size: var(--text-lg); font-weight: 700; margin: 0;
+        }
+        .settings-panel-body {
+          flex: 1; overflow-y: auto; padding: var(--sp-6);
+          display: flex; flex-direction: column; gap: var(--sp-2);
+        }
+        .settings-panel-footer {
+          padding: var(--sp-5) var(--sp-6);
+          border-top: 1px solid var(--border-color);
+        }
+        @keyframes slideInRight {
+          from { transform: translateX(100%); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
         }
 
         .s-panel-header { display: flex; flex-direction: column; gap: var(--sp-2); }

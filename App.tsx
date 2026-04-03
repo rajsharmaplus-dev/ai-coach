@@ -66,6 +66,7 @@ const AppContent: React.FC = () => {
   const [interviewDetails, setInterviewDetails] = useState<string>('');
   const [resumeText, setResumeText] = useState<string>('');
   const [jdText, setJdText] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash-native-audio-latest');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +100,7 @@ const AppContent: React.FC = () => {
   const isSessionReadyRef = useRef<boolean>(false);
   const isAudioActiveRef = useRef(false); // New: Gate audio until handshake is complete
   const isExpectedCloseRef = useRef(false); 
+  const interviewStatusRef = useRef<InterviewStatus>('IDLE');
 
   const cleanupAudio = useCallback(() => {
      console.log("Cleaning up audio resources...");
@@ -193,6 +195,10 @@ const AppContent: React.FC = () => {
     noiseThresholdRef.current = noiseThreshold;
   }, [noiseThreshold]);
 
+  useEffect(() => {
+    interviewStatusRef.current = interviewStatus;
+  }, [interviewStatus]);
+
 
   useEffect(() => {
     try {
@@ -232,6 +238,7 @@ const AppContent: React.FC = () => {
       audioSourcesRef.current.clear();
       nextAudioStartTimeRef.current = 0;
       setInterviewStatus('LISTENING');
+      interviewStatusRef.current = 'LISTENING';
     }
   }, []);
 
@@ -488,9 +495,9 @@ const AppContent: React.FC = () => {
 
       // ── Step 3: Connect to Gemini ───────────────────────────────────────
       currentStep = "AI Brain Connection";
-      console.log("DEBUG: Initiating ai.live.connect with gemini-2.5-flash-native-audio-latest...");
+      console.log("DEBUG: Initiating ai.live.connect with", selectedModel);
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-latest',
+        model: selectedModel,
         config: {
           systemInstruction: { parts: [{ text: getInitialSystemPrompt(topic, yearsOfExperience, skills, language, interviewDetails, resumeText, jdText) }] },
           responseModalities: [Modality.AUDIO],
@@ -515,33 +522,43 @@ const AppContent: React.FC = () => {
               reconnectAttemptsRef.current = 0; // Reset on success
               if (!isReconnect) {
                 setInterviewStartTime(Date.now());
-                try {
-                  setTimeout(() => {
-                    if (isSessionReadyRef.current && sessionRef.current) {
-                      console.log("DEBUG: Sending initial prompt after 1000ms stability delay...");
-                      sessionRef.current.sendClientContent({
-                        turns: [{ 
-                          role: 'user', 
-                          parts: [{ text: "Hello Sanai. I am ready. Please introduce yourself and start the interview." }] 
-                        }],
-                        turnComplete: true
-                      });
-                      // Faster audio gate activation
-                      setTimeout(() => { 
-                         isAudioActiveRef.current = true;
-                         console.log("DEBUG: User Mic Stream Activated.");
-                      }, 500);
-                    }
-                  }, 1000);
-                } catch (err) {
-                  console.error("DEBUG: Failed to send initial prompt:", err);
+                if (selectedModel.includes('3.1')) {
+                  console.log("DEBUG: Gemini 3.1 detected. Skipping manual greeting; relying on System Prompt for auto-intro.");
+                  // Still activate mic after a short stability delay
+                  setTimeout(() => { 
+                     isAudioActiveRef.current = true;
+                     console.log("DEBUG: User Mic Stream Activated (3.1).");
+                  }, 500);
+                } else {
+                  try {
+                    setTimeout(() => {
+                      if (isSessionReadyRef.current && sessionRef.current) {
+                        console.log("DEBUG: Sending initial prompt after 1000ms stability delay...");
+                        sessionRef.current.sendClientContent({
+                          turns: [{ 
+                            role: 'user', 
+                            parts: [{ text: "Hello Sanai. I am ready. Please introduce yourself and start the interview." }] 
+                          }],
+                          turnComplete: true
+                        });
+                        // Faster audio gate activation
+                        setTimeout(() => { 
+                           isAudioActiveRef.current = true;
+                           console.log("DEBUG: User Mic Stream Activated.");
+                        }, 500);
+                      }
+                    }, 1000);
+                  } catch (err) {
+                    console.error("DEBUG: Failed to send initial prompt:", err);
+                  }
                 }
               } else {
                 // --- CONTEXT CATCH-UP ON RECONNECT ---
                 if (messages.length > 0) {
-                  console.log(`DEBUG: Reconnected. Sending ${messages.length} messages as catch-up context.`);
+                  const recentMessages = messages.slice(-10); // Only send last 10 for 3.1 stability
+                  console.log(`DEBUG: Reconnected. Sending ${recentMessages.length} messages as catch-up context.`);
                   try {
-                    const historyText = messages.map(m => `${m.sender}: ${m.text}`).join('\n');
+                    const historyText = recentMessages.map(m => `${m.sender}: ${m.text}`).join('\n');
                     sessionRef.current?.sendClientContent({
                       turns: [{ 
                         role: 'user', 
@@ -749,7 +766,7 @@ PLEASE CONTINUE NATURALLY.` }]
 
         // Barge-in logic: if Sanai is speaking and the user speaks loudly, interrupt
         // We use a small counter to ensure it's a sustained sound rather than a spike
-        if (interviewStatus === 'SPEAKING' && db > noiseThresholdRef.current + 15) {
+        if (interviewStatusRef.current === 'SPEAKING' && db > noiseThresholdRef.current + 15) {
             bargeInCounterRef.current++;
             if (bargeInCounterRef.current > 1) { // Faster response: ~1 chunk = ~250ms
                 console.log("DEBUG: Barge-in detected (Voice).");
@@ -775,7 +792,12 @@ PLEASE CONTINUE NATURALLY.` }]
         // Only send to Gemini if the session and audio gate are ready
         if (sessionRef.current && isSessionReadyRef.current && isAudioActiveRef.current) {
           lastLogRef.chunkCount++;
-          session.sendRealtimeInput({ media: createBlob(processed) } as any);
+          const chunk = createBlob(processed);
+          if (selectedModel.includes('3.1')) {
+            sessionRef.current.sendRealtimeInput({ audio: chunk } as any);
+          } else {
+            sessionRef.current.sendRealtimeInput({ media: chunk } as any);
+          }
         }
 
         const out = event.outputBuffer;
@@ -806,7 +828,7 @@ PLEASE CONTINUE NATURALLY.` }]
         setAppState(AppState.SETUP);
       }
     }
-  }, [userName, topic, yearsOfExperience, skills, language, interviewDetails, audioInputId, audioOutputId, micGain, cleanupAudio, isEndingInterview, appState, cancelInterview, interviewStatus, interruptAi]);
+  }, [userName, topic, yearsOfExperience, skills, language, interviewDetails, audioInputId, audioOutputId, micGain, cleanupAudio, isEndingInterview, appState, cancelInterview, selectedModel]); // Removed interviewStatus, interruptAi to break dependency loop
 
 
   const handleSendMessage = (text: string) => {
@@ -955,6 +977,8 @@ PLEASE CONTINUE NATURALLY.` }]
             setNoiseThreshold={setNoiseThreshold}
             theme={theme}
             toggleTheme={toggleTheme}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
           />
         );
       case AppState.INTERVIEWING:

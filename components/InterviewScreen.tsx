@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Message, InterviewStatus } from '../types';
 import { MicrophoneIcon, ClockIcon, SendIcon, BrainCircuitIcon, SunIcon, MoonIcon } from './icons';
 // Removed Avatar3D as per priority shift toward audio and recording stability
@@ -44,6 +44,44 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
   const [elapsed, setElapsed] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Draggable camera state
+  const camRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef({ dragging: false, startX: 0, startY: 0, initLeft: 0, initTop: 0 });
+  const [camPos, setCamPos] = useState({ left: 20, bottom: 20, top: -1 });
+
+  const onCamPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    const el = camRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragState.current = {
+      dragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      initLeft: rect.left,
+      initTop: rect.top,
+    };
+    el.setPointerCapture(e.pointerId);
+  }, []);
+
+  const onCamPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragState.current.dragging) return;
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+    
+    // Only update position if moved more than 3 pixels (prevents jump on accidental click)
+    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+
+    const newLeft = Math.max(0, Math.min(window.innerWidth - 240, dragState.current.initLeft + dx));
+    const newTop  = Math.max(0, Math.min(window.innerHeight - 180, dragState.current.initTop + dy));
+    setCamPos({ left: newLeft, bottom: -1, top: newTop });
+  }, []);
+
+  const onCamPointerUp = useCallback((e: React.PointerEvent) => {
+    dragState.current.dragging = false;
+    try { camRef.current?.releasePointerCapture(e.pointerId); } catch(e) {}
+  }, []);
 
   useEffect(() => {
     if (!interviewStartTime) return;
@@ -189,13 +227,8 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
       {/* ── Footer Control Dock ── */}
       <footer className="i-footer">
         <div className="i-dock">
-          {/* User Video Preview */}
-          {localMediaStream && (
-            <div className="i-user-preview">
-              <video ref={videoRef} autoPlay muted playsInline />
-              <span className="i-rec-badge">REC</span>
-            </div>
-          )}
+          {/* User Video Preview Placeholder (moved outside for stability) */}
+          <div className="i-cam-placeholder" />
 
           {/* Mic Indicator */}
           <div className={`i-mic-indicator ${interviewStatus === 'LISTENING' ? 'active' : ''}`}>
@@ -228,6 +261,26 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           </form>
         </div>
       </footer>
+
+      {/* ── Draggable Camera Overlay (Outside footer for stacking stability) ── */}
+      {localMediaStream && (
+        <div
+          ref={camRef}
+          className="i-cam-overlay"
+          onPointerDown={onCamPointerDown}
+          onPointerMove={onCamPointerMove}
+          onPointerUp={onCamPointerUp}
+          style={{
+            left: camPos.left,
+            top: camPos.top >= 0 ? camPos.top : undefined,
+            bottom: camPos.bottom >= 0 ? camPos.bottom : undefined,
+          }}
+        >
+          <video ref={videoRef} autoPlay muted playsInline />
+          <span className="i-rec-badge">REC</span>
+          <div className="i-cam-drag-hint">⠿ drag</div>
+        </div>
+      )}
 
       <style>{`
         /* ── Page Layout ── */
@@ -640,29 +693,56 @@ const InterviewScreen: React.FC<InterviewScreenProps> = ({
           gap: var(--sp-4);
         }
 
-        /* User Preview */
-        .i-user-preview {
-          width: 200px;
-          height: 150px;
-          border-radius: var(--radius-lg);
-          overflow: hidden;
-          border: 1px solid var(--border-medium);
-          position: relative;
+        .i-cam-placeholder {
+          width: 120px;
+          height: 60px;
           flex-shrink: 0;
-          box-shadow: var(--shadow-md);
+          /* Just a spacer to keep mic/controls aligned as before */
         }
-        .i-user-preview video {
+
+        @media (max-width: 640px) {
+          .i-cam-placeholder { display: none; }
+        }
+
+        /* Floating Draggable Camera */
+        .i-cam-overlay {
+          position: fixed;
+          width: 240px;
+          height: 180px;
+          border-radius: var(--radius-xl);
+          overflow: hidden;
+          border: 2px solid rgba(255,255,255,0.15);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+          cursor: grab;
+          z-index: 500;
+          transition: box-shadow 0.15s ease;
+          touch-action: none;
+          user-select: none;
+        }
+        .i-cam-overlay:active { cursor: grabbing; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
+        .i-cam-overlay video {
           width: 100%; height: 100%;
           object-fit: cover;
           transform: scaleX(-1);
         }
-        .i-rec-badge {
-          position: absolute; bottom: 3px; left: 0; right: 0;
-          text-align: center;
-          font-size: 8px; font-weight: 900;
-          background: rgba(239,68,68,0.8);
-          color: white;
+        .i-cam-drag-hint {
+          position: absolute;
+          top: 6px; right: 8px;
+          font-size: 9px;
+          font-weight: 700;
+          color: rgba(255,255,255,0.6);
           letter-spacing: 0.05em;
+          pointer-events: none;
+          text-transform: uppercase;
+        }
+        .i-rec-badge {
+          position: absolute; bottom: 5px; left: 0; right: 0;
+          text-align: center;
+          font-size: 9px; font-weight: 900;
+          background: rgba(239,68,68,0.85);
+          color: white;
+          letter-spacing: 0.08em;
+          padding: 2px 0;
         }
 
         /* Mic Indicator */

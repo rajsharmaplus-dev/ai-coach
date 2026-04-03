@@ -42,143 +42,17 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
   feedback, messages, topic, onStartNew, userName, recordingUrl, theme, toggleTheme, metrics, onRetry, error
 }) => {
   const kpis: KPIs = metrics ?? { confidence: 85, clarity: 78, technical: 82, pacing: 70 };
+  const [downloadToast, setDownloadToast] = React.useState(false);
 
   const overallScore = Math.round((kpis.confidence + kpis.clarity + kpis.technical + kpis.pacing) / 4);
 
   const handleDownloadPdf = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 20;
-    const contentWidth = pageWidth - (margin * 2);
-    let y = margin;
-
-    const checkPageBreak = (needed: number) => {
-      if (y + needed > pageHeight - margin) {
-        doc.addPage();
-        y = margin;
-        return true;
-      }
-      return false;
-    };
-
-    const drawHeader = () => {
-      // Background Accent
-      doc.setFillColor(248, 250, 252); // slate-50
-      doc.rect(0, 0, pageWidth, 45, 'F');
-      
-      // Brand
-      doc.setTextColor(110, 60, 255); // purple-600
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(24);
-      doc.text('SANAI', margin, 25);
-      
-      doc.setTextColor(100, 116, 139); // slate-500
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text('INTELLIGENCE DOSSIER', margin, 32);
-      
-      // Session Info (Right aligned)
-      doc.setFontSize(9);
-      doc.text(`DATE: ${new Date().toLocaleDateString('en-US', { dateStyle: 'long' })}`, pageWidth - margin, 20, { align: 'right' });
-      doc.text(`SESSION ID: ${Math.random().toString(36).substring(7).toUpperCase()}`, pageWidth - margin, 25, { align: 'right' });
-      
-      y = 55;
-    };
-
-    drawHeader();
-
-    // ── OVERVIEW SECTION ──
-    doc.setTextColor(15, 23, 42); // slate-900
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text(topic, margin, y);
-    y += 8;
+    // Native print is the gold standard for "Clean" PDFs with multi-language support (Hindi/Hinglish)
+    window.print();
     
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    doc.text(`CANDIDATE: ${userName}`, margin, y);
-    y += 15;
-
-    // ── SCORE BOX ──
-    doc.setDrawColor(226, 232, 240); // slate-200
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(margin, y, contentWidth, 35, 3, 3, 'FD');
-    
-    // Overall Score
-    doc.setTextColor(110, 60, 255);
-    doc.setFontSize(28);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${overallScore}`, margin + 15, y + 22);
-    doc.setFontSize(10);
-    doc.setTextColor(148, 163, 184); // slate-400
-    doc.text('/ 100', margin + 15, y + 28);
-    doc.text('OVERALL READINESS', margin + 35, y + 22);
-
-    // KPI Mini-Grid in box
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    const kpiX = margin + 100;
-    doc.text(`CONFIDENCE: ${kpis.confidence}%`, kpiX, y + 12);
-    doc.text(`CLARITY: ${kpis.clarity}%`, kpiX, y + 22);
-    doc.text(`TECHNICAL: ${kpis.technical}%`, kpiX + 45, y + 12);
-    doc.text(`PACING: ${kpis.pacing}%`, kpiX + 45, y + 22);
-    
-    y += 50;
-
-    // ── ANALYSIS SECTIONS ──
-    doc.setTextColor(15, 23, 42);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('AI PERFORMANCE ANALYSIS', margin, y);
-    doc.setDrawColor(110, 60, 255);
-    doc.setLineWidth(0.5);
-    doc.line(margin, y + 2, margin + 30, y + 2);
-    y += 15;
-
-    parsedSections.forEach((section) => {
-      // Title
-      checkPageBreak(25);
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(73, 56, 175); // Indigo
-      doc.text(section.title.toUpperCase(), margin, y);
-      y += 8;
-
-      // Body (Handle multi-line)
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(51, 65, 85); // slate-700
-      
-      // Extract raw body text without React elements
-      const bodyText = typeof section.body === 'string' 
-        ? section.body 
-        : Array.isArray(section.body) 
-          ? section.body.map(b => (typeof b === 'string' ? b : (b as any).props.children)).join('')
-          : feedback.split('---')[parsedSections.indexOf(section) + 1]?.split('\n').slice(1).join('\n').trim();
-
-      const lines = doc.splitTextToSize(bodyText || '', contentWidth - 10);
-      
-      lines.forEach((line: string) => {
-        checkPageBreak(6);
-        doc.text(line, margin + 5, y);
-        y += 6;
-      });
-      
-      y += 10;
-    });
-
-    // ── FOOTER ON ALL PAGES ──
-    const totalPages = (doc as any).internal.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184);
-        doc.text(`Page ${i} of ${totalPages} — Sanai Performance Analysis — Confidential`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-    }
-
-    doc.save(`Sanai_Dossier_${userName.replace(/\s+/g, '_')}.pdf`);
+    // Show confirmation toast with instruction
+    setDownloadToast(true);
+    setTimeout(() => setDownloadToast(false), 8000);
   };
 
   // Parse structured feedback from Gemini response separated by ---
@@ -204,6 +78,31 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
 
   return (
     <div className="f-page animate-fade-slide">
+
+      {/* ── Guidance Toast for Print ── */}
+      {downloadToast && (
+        <div style={{
+          position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+          color: 'white', padding: '14px 28px', borderRadius: '999px',
+          fontWeight: 600, fontSize: '14px', zIndex: 9999,
+          boxShadow: '0 8px 32px rgba(99,102,241,0.45)',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          animation: 'fadeIn 0.2s ease',
+          whiteSpace: 'nowrap'
+        }}>
+          📄 Select <strong>"Save as PDF"</strong> in the print destination to save
+        </div>
+      )}
+
+      {/* ── Print Header (Only visible in PDF) ── */}
+      <div className="print-header">
+        <div className="print-brand">SANAI <span className="print-badge">INTELLIGENCE DOSSIER</span></div>
+        <div className="print-meta">
+          <div>DOCUMENT ID: {Math.random().toString(36).substring(7).toUpperCase()}</div>
+          <div>DATE: {new Date().toLocaleDateString('en-US', { dateStyle: 'long' })}</div>
+        </div>
+      </div>
 
       {/* ── Header ── */}
       <header className="f-header">
@@ -659,6 +558,81 @@ const FeedbackCard = ({ title, body, delay }: { title: string; body: React.React
         @media (max-width: 480px) {
           .f-footer { flex-direction: column-reverse; }
           .f-footer button { width: 100%; justify-content: center; }
+        }
+
+        /* ── PRINT STYLES (Clean Dossier) ── */
+        .print-header { display: none; }
+        
+        @media print {
+          @page { margin: 15mm; size: auto; }
+          
+          body { background: white !important; color: #1e293b !important; }
+          .f-page { background: white !important; overflow: visible !important; height: auto !important; min-height: auto !important; margin: 0 !important; padding: 0 !important; }
+          .f-header, .f-footer, .f-video-card, .btn-outline, .btn-primary, .icon-btn, .f-sidebar-label, .badge { display: none !important; }
+          
+          .f-body {
+            display: block !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: 100% !important;
+          }
+          
+          .f-sidebar {
+            display: block !important;
+            position: static !important;
+            max-height: none !important;
+            overflow: visible !important;
+            margin-top: 40px !important;
+            break-before: page;
+          }
+          
+          .glass-panel {
+            background: white !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            margin-bottom: 25px !important;
+          }
+          
+          .print-header {
+            display: flex !important;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #6366f1;
+            padding-bottom: 12px;
+            margin-bottom: 30px;
+          }
+          
+          .print-brand { font-weight: 800; font-size: 26px; color: #4f46e5; font-family: sans-serif; }
+          .print-badge { font-size: 10px; color: #94a3b8; letter-spacing: 2px; margin-left: 10px; font-weight: 900; }
+          .print-meta { text-align: right; font-size: 10px; color: #64748b; line-height: 1.5; font-family: monospace; }
+          
+          .f-overview-card { border: none !important; padding: 0 !important; margin-bottom: 40px !important; }
+          .f-overview-topic { font-size: 32px !important; color: #0f172a !important; line-height: 1.1; }
+          .f-score-ring { border: 3px solid #4f46e5 !important; box-shadow: none !important; background: white !important; }
+          .f-score-number { color: #4f46e5 !important; }
+          
+          .f-insight-card { break-inside: avoid; border: 1px solid #f1f5f9 !important; padding: 25px !important; }
+          .f-insight-title { color: #4f46e5 !important; font-size: 20px !important; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; padding-left: 0 !important; }
+          .f-insight-body { padding-left: 0 !important; font-size: 11pt !important; color: #334155 !important; }
+          .f-insight-card::before { display: none; }
+          
+          .f-transcript-card { border: none !important; padding: 0 !important; }
+          .f-transcript-list { max-height: none !important; overflow: visible !important; display: flex !important; flex-direction: column !important; gap: 10px !important; }
+          .f-msg { margin-bottom: 8px !important; max-width: 100% !important; }
+          .f-msg-bubble { 
+            background: #fff !important; 
+            color: #334155 !important; 
+            border: 1px solid #e2e8f0 !important; 
+            font-size: 10pt !important;
+            padding: 12px 16px !important;
+            border-radius: 8px !important;
+          }
+          .f-msg--ai .f-msg-bubble { border-left: 5px solid #6366f1 !important; background: #f8faff !important; }
+          
+          /* Native font support for Hindi/Hinglish */
+          * { overflow: visible !important; -webkit-print-color-adjust: exact; }
+          .f-insight-body { white-space: pre-wrap !important; word-wrap: break-word !important; }
         }
       `}</style>
     </div>
